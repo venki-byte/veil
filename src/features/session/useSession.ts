@@ -17,6 +17,7 @@ import {
   LeakBlockedError,
   quickRead,
   QUICK_READ_MAX_CHARS,
+  refreshDeviceStatus,
   simplify,
   transcribeImage,
   translate,
@@ -164,8 +165,15 @@ export function useSession() {
       setRegistry(fresh)
       setDoc({ ...loaded, text })
       setStage('detecting')
+      // Marked as running from the first moment, so nothing can be sent
+      // while detection is still in progress.
+      setDetection({ running: true, done: 0, total: 0, nanoUsed: false, nanoFailures: 0 })
 
-      const useNano = firebaseConfigured && getDeviceState().status === 'ready'
+      // Re-check the model rather than trusting a status that may still be
+      // "checking" when a document is opened straight after page load.
+      const device = firebaseConfigured ? await refreshDeviceStatus() : getDeviceState()
+      if (run !== runId.current) return
+      const useNano = firebaseConfigured && device.status === 'ready'
       setDetection({ running: true, done: 0, total: 0, nanoUsed: useNano, nanoFailures: 0 })
 
       const result = await detectDocument(text, {

@@ -71,12 +71,19 @@ function normalise(value: string): string {
 
 /** Removes quotes, brackets and trailing punctuation around a value. */
 function tidy(value: string): string {
-  return value
+  let tidied = value
     .replace(/\s+/g, ' ')
-    .replace(/^[\s,;:.'"“”‘’()[\]{}<>-]+/, '')
+    .replace(/^[\s,;:.'"“”‘’)\]}<>-]+/, '')
     .replace(/[\s,;:'"“”‘’([{<>-]+$/, '')
     .replace(/[\s.]+$/, '')
     .trim()
+  // Drop an opening bracket only when it is never closed: "(080) 4123 5567"
+  // keeps its bracket, "(Asha Verma" loses it.
+  const closers: Record<string, string> = { '(': ')', '[': ']', '{': '}' }
+  while (tidied[0] in closers && !tidied.includes(closers[tidied[0]])) {
+    tidied = tidied.slice(1).trim()
+  }
+  return tidied
 }
 
 function nameAliases(value: string): string[] {

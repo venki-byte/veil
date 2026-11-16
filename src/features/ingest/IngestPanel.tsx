@@ -198,6 +198,9 @@ export function IngestPanel({ session, device }: IngestPanelProps) {
         <div className="mt-4">
           <RoutingTable />
         </div>
+        <a href="#/routing" className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-device-700 hover:underline">
+          Run one call in each mode and see where it runs <Icon name="arrowRight" />
+        </a>
       </section>
 
       <p className="mt-12 border-t border-line pt-5 text-xs leading-relaxed text-muted">

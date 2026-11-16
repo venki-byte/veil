@@ -100,12 +100,17 @@ const NAME_LABEL = new RegExp(
       'doctor',
       'physician',
       'pathologist',
+      '(?:verified|prepared|reported|signed|issued|approved|authori[sz]ed|checked|attested)\\s+by',
       'attn\\.?',
       'attention',
     ].join('|') +
     ')[ \\t]*[:\\-][ \\t]*([^\\n|;]+)',
   'gi',
 )
+
+/** A personal title followed by up to four capitalised words on the same line. */
+const TITLED_NAME =
+  /(?<![\p{L}\p{N}])(?:Mr|Mrs|Ms|Miss|Dr|Prof|Shri|Smt)\.?[ \t]+(\p{Lu}[\p{L}'-]+(?:[ \t]+\p{Lu}[\p{L}'-]+){0,3})/gu
 
 /** "Dear Mr. Sharma," at the start of a letter. */
 const SALUTATION = /(?:^|\n)[ \t]*Dear[ \t]+([^\n,:]{2,60})[,:]/g
@@ -193,7 +198,17 @@ export function detectWithRegex(text: string): Span[] {
     for (const match of text.matchAll(pattern)) claim(match.index, match[0], type)
   }
 
-  // 4. Long digit runs: phone numbers, account numbers, national IDs, cards.
+  // 4. ID-shaped tokens that mix capital letters and digits. Claimed before
+  //    plain digit runs so "APP-2026-338104" is one ID, not a phone number.
+  for (const match of text.matchAll(ID_SHAPED)) {
+    const value = match[0]
+    const letters = value.replace(/[^A-Z]/g, '').length
+    if (letters >= 2 && digitCount(value) >= 4 && value.length >= 7 && !NOT_AN_ID.test(value)) {
+      claim(match.index, value, 'ID')
+    }
+  }
+
+  // 5. Long digit runs: phone numbers, account numbers, national IDs, cards.
   for (const match of text.matchAll(DIGIT_RUN)) {
     const value = match[0]
     const groups = value.replace(/^\+/, '').split(/[ -]/)
@@ -227,15 +242,6 @@ export function detectWithRegex(text: string): Span[] {
     }
   }
 
-  // 5. ID-shaped tokens that mix capital letters and digits.
-  for (const match of text.matchAll(ID_SHAPED)) {
-    const value = match[0]
-    const letters = value.replace(/[^A-Z]/g, '').length
-    if (letters >= 2 && digitCount(value) >= 4 && value.length >= 7 && !NOT_AN_ID.test(value)) {
-      claim(match.index, value, 'ID')
-    }
-  }
-
   // 6. Values that follow a name label.
   for (const match of text.matchAll(NAME_LABEL)) {
     const raw = match[1]
@@ -254,6 +260,12 @@ export function detectWithRegex(text: string): Span[] {
     if (!cleaned || GENERIC_SALUTATION.test(cleaned.text)) continue
     if (!/^\p{Lu}/u.test(cleaned.text) || /\d/.test(cleaned.text)) continue
     claim(rawStart + cleaned.offset, cleaned.text, 'PERSON')
+  }
+
+  // A title followed by capitalised words is a name: "Mr. Karthik Venugopal".
+  for (const match of text.matchAll(TITLED_NAME)) {
+    const value = match[1].replace(/[\s,.;:]+$/, '')
+    if (value.length >= 2) claim(match.index + match[0].length - match[1].length, value, 'PERSON')
   }
 
   for (const match of text.matchAll(RELATION_OF)) {

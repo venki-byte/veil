@@ -122,6 +122,26 @@ describe('detectWithRegex: labelled values', () => {
     ])
   })
 
+  it('finds a name after "Verified by" and stops at the qualification', () => {
+    expect(found('Verified by: Dr. Kavitha Subramaniam, MD (Pathology), Reg. No. KMC-48213')).toEqual([
+      ['Kavitha Subramaniam', 'PERSON'],
+      ['KMC-48213', 'ID'],
+    ])
+  })
+
+  it('finds a name after a personal title anywhere in the text', () => {
+    expect(values('To,\nMr. Karthik Venugopal\nCo-applicant')).toEqual(['Karthik Venugopal'])
+    expect(values('Mrs. Raghavan is advised to see Dr. Deshpande at the earliest.')).toEqual([
+      'Raghavan',
+      'Deshpande',
+    ])
+    expect(values('The doctor will call. Dr. is a title.')).toEqual([])
+  })
+
+  it('treats a lettered reference with hyphenated digits as one ID', () => {
+    expect(found('Application No. APP-2026-338104 received')).toEqual([['APP-2026-338104', 'ID']])
+  })
+
   it('finds a name in a letter salutation but not a generic one', () => {
     expect(found('Dear Mr. Venugopal,\nYour loan')).toEqual([['Venugopal', 'PERSON']])
     expect(values('Dear Customer,\nYour loan')).toEqual([])

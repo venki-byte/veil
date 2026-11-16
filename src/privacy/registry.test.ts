@@ -40,6 +40,13 @@ describe('Registry: placeholders', () => {
     expect(registry.redact('Mrs. Meenakshi Raghavan saw Dr. Anil Deshpande')).toBe('Mrs. [PERSON_1] saw Dr. [PERSON_2]')
   })
 
+  it('keeps a bracket that is part of the value and drops one that is not', () => {
+    const registry = new Registry()
+    expect(registry.add('(080) 4123 5567', 'CONTACT', 'regex')?.value).toBe('(080) 4123 5567')
+    expect(registry.add('(Asha Verma', 'PERSON', 'nano')?.value).toBe('Asha Verma')
+    expect(registry.redact('Phone: (080) 4123 5567 |')).toBe('Phone: [CONTACT_1] |')
+  })
+
   it('rejects values that are too short, empty or placeholder-like', () => {
     const registry = new Registry()
     expect(registry.add('A', 'PERSON', 'nano')).toBeNull()
