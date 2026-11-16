@@ -1,0 +1,38 @@
+SUNRISE DIAGNOSTICS & PATHOLOGY LAB
+14, Lake View Road, Indiranagar, Bengaluru 560038
+Phone: (080) 4123 5567 | Email: reports@sunrisediagnostics.example
+
+LABORATORY REPORT
+
+Patient Name: Mrs. Meenakshi Raghavan          Age/Sex: 52 Y / Female
+Date of Birth: 14/08/1973                      Patient ID: SDL-20261187
+Referred By: Dr. Anil Deshpande                Sample Collected: 09/11/2026 07:40
+Mobile: 98450 12367                            Report Date: 10/11/2026
+Email: meenakshi.raghavan@mailbox.example
+
+COMPLETE BLOOD COUNT
+Test                      Result      Unit          Reference Range
+Haemoglobin               10.8        g/dL          12.0 - 15.0        LOW
+Total WBC Count           7,400       cells/cumm    4,000 - 11,000
+Platelet Count            2.6         lakh/cumm     1.5 - 4.5
+MCV                       74          fL            80 - 100           LOW
+
+DIABETES PANEL
+Fasting Blood Glucose     132         mg/dL         70 - 99            HIGH
+HbA1c                     7.1         %             Below 5.7          HIGH
+
+LIPID PROFILE
+Total Cholesterol         224         mg/dL         Below 200          HIGH
+LDL Cholesterol           148         mg/dL         Below 100          HIGH
+HDL Cholesterol           41          mg/dL         Above 50           LOW
+Triglycerides             176         mg/dL         Below 150          HIGH
+
+THYROID
+TSH                       6.8         mIU/L         0.4 - 4.0          HIGH
+
+Remarks: Low haemoglobin with low MCV suggests microcytic anaemia; iron studies are
+advised. HbA1c is in the diabetic range. Please correlate clinically. Mrs. Raghavan
+is advised to review these results with Dr. Deshpande at the earliest.
+
+Verified by: Dr. Kavitha Subramaniam, MD (Pathology), Reg. No. KMC-48213
+This report is electronically generated for Meenakshi Raghavan and is valid without signature.
