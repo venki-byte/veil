@@ -3,6 +3,7 @@ import { useDeviceModel } from './ai/useDeviceModel'
 import { Header } from './components/Header'
 import { useHashRoute } from './components/useHashRoute'
 import { useOnline } from './components/useOnline'
+import { EvalPage } from './features/eval/EvalPage'
 import { AnswerTools } from './features/explain/AnswerTools'
 import { FollowUpBox } from './features/followup/FollowUpBox'
 import { IngestPanel } from './features/ingest/IngestPanel'
@@ -53,6 +54,8 @@ export default function App() {
       <main id="main" className="flex-1">
         {route === '/routing' ? (
           <RoutingCheck device={device} />
+        ) : route === '/eval' ? (
+          <EvalPage device={device} />
         ) : session.stage === 'empty' ? (
           <IngestPanel session={session} device={device} />
         ) : session.stage === 'reading' ? (

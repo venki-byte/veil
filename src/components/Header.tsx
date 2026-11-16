@@ -35,12 +35,23 @@ export function Header({ device, online, route, onOpenLedger }: HeaderProps) {
           <span className="hidden sm:inline-flex">
             <DeviceStatusPill device={device} />
           </span>
-          <a
-            href={route === '/routing' ? '#/' : '#/routing'}
-            className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-200/60 sm:inline-flex"
-          >
-            <Icon name="route" /> {route === '/routing' ? 'Back to app' : 'Routing'}
-          </a>
+          {(
+            [
+              ['/routing', 'Routing', 'route'],
+              ['/eval', 'Leak test', 'shieldCheck'],
+            ] as const
+          ).map(([path, label, icon]) => (
+            <a
+              key={path}
+              href={`#${path}`}
+              aria-current={route === path ? 'page' : undefined}
+              className={`hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium hover:bg-stone-200/60 md:inline-flex ${
+                route === path ? 'bg-stone-200/70 text-stone-900' : 'text-stone-700'
+              }`}
+            >
+              <Icon name={icon} /> {label}
+            </a>
+          ))}
           <button
             type="button"
             onClick={onOpenLedger}
