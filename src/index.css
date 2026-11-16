@@ -1,0 +1,88 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', 'Nirmala UI', 'Noto Sans Devanagari', 'Noto Sans Tamil', sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-paper: #f6f5f1;
+  --color-card: #ffffff;
+  --color-ink: #1c2321;
+  --color-muted: #5d6966;
+  --color-line: #e2e0d8;
+
+  /* On-device: teal. Everything that stays local uses this family. */
+  --color-device-50: #e9f6f2;
+  --color-device-100: #cdeee3;
+  --color-device-200: #a3dfcd;
+  --color-device-600: #0f766e;
+  --color-device-700: #0b5d57;
+  --color-device-900: #0f3d3e;
+
+  /* Cloud: indigo. Everything that leaves the device uses this family. */
+  --color-cloud-50: #eef0fb;
+  --color-cloud-100: #dfe3f8;
+  --color-cloud-200: #c3caf1;
+  --color-cloud-600: #4653c4;
+  --color-cloud-700: #3944a3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-device-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--color-device-200);
+}
+
+@keyframes veil-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-in {
+  animation: veil-fade-in 0.25s ease-out both;
+}
+
+@keyframes veil-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.slide-in {
+  animation: veil-slide-in 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .slide-in {
+    animation: none;
+  }
+}
