@@ -57,7 +57,7 @@ function setUpAppCheck(firebaseApp: FirebaseApp): AppCheckMode {
   if (local) {
     // Debug provider. With `true` the SDK creates a debug token, prints it to
     // the browser console once, and reuses it. Register that token in the
-    // Firebase console under App Check > Apps > Manage debug tokens.
+    // Firebase console under Security > App Check > Apps > Manage debug tokens.
     // A token can also be supplied through .env.local, which is not committed.
     const debugToken = (env.VITE_APPCHECK_DEBUG_TOKEN as string | undefined) || true
     ;(globalThis as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken

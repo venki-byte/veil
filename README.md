@@ -133,7 +133,7 @@ pdf.js for local PDF text extraction, Vitest. There is no custom backend.
 
 3. Open the app on `localhost`. On the first model call the browser console prints an
    **App Check debug token**. Register it in the Firebase console under
-   **App Check → Apps → Manage debug tokens**.
+   **Security → App Check → Apps → Manage debug tokens**.
 4. Click **Set up private mode** to download Gemini Nano (one time, several minutes).
 5. Open `#/routing` and click **Run all four** to confirm each mode runs where expected.
 

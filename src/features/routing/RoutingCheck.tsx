@@ -98,7 +98,7 @@ export function RoutingCheck({ device }: { device: DeviceState }) {
         <Fact label="Network" value={online ? 'Online' : 'Offline'} good={online} />
       </dl>
       <p className="mt-2 text-xs text-muted">
-        Cloud model: <span className="font-mono">{CLOUD_MODEL}</span>. App Check starts on the first model call.
+        Cloud model: <span className="font-mono">{CLOUD_MODEL}</span>. The App Check debug token is printed in the browser console when the page loads.
       </p>
 
       <div className="mt-8 flex items-center justify-between gap-4">

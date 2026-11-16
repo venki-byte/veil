@@ -67,6 +67,22 @@ export const explanationSchema = {
   required: ['documentType', 'summary', 'keyTerms', 'thingsToWatch', 'deadlinesAndAmounts', 'questionsToAsk'],
 } as const
 
+/**
+ * The cloud `responseSchema` takes a subset of JSON Schema. Keywords it does
+ * not know are removed here, so one schema definition serves both paths.
+ */
+const CLOUD_UNSUPPORTED = new Set(['additionalProperties', '$schema', '$id'])
+
+export function toCloudSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toCloudSchema)
+  if (!schema || typeof schema !== 'object') return schema
+  return Object.fromEntries(
+    Object.entries(schema)
+      .filter(([key]) => !CLOUD_UNSUPPORTED.has(key))
+      .map(([key, value]) => [key, toCloudSchema(value)]),
+  )
+}
+
 export interface KeyTerm {
   term: string
   meaning: string

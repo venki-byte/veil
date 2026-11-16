@@ -10,11 +10,10 @@
  *   4. records the call in the privacy ledger, including where it actually
  *      ran (`response.inferenceSource`) and the exact text sent to the cloud.
  *
- * There are no direct Prompt API prompts and no direct Gemini API calls
- * anywhere in the app. The one direct touch of the browser's `LanguageModel`
- * object is a read-only `availability()` check, used to show model status
- * and to decide when a "Set up" click is needed; the SDK has no public call
- * for that. All inference still goes through the SDK.
+ * There are no direct Prompt API calls and no direct Gemini API calls
+ * anywhere in the app. Inference, the model download and the model status
+ * all go through the SDK (see deviceStatus.ts for how status is derived
+ * from `initializeDeviceModel()`).
  */
 
 import {
@@ -27,12 +26,14 @@ import {
   type AI,
   type GenerativeModel,
   type Part,
+  type SchemaRequest,
 } from 'firebase/ai'
-import { getFirebaseApp, NotConfiguredError } from '../firebase'
+import { firebaseConfigured, getFirebaseApp, NotConfiguredError } from '../firebase'
 import { recordLedgerEntry, type InferenceSourceName } from '../ledger/store'
 import type { NanoFinding } from '../privacy/detect'
 import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
+import { createDeviceStore } from './deviceStatus'
 import {
   definePrompt,
   detectPrompt,
@@ -52,10 +53,12 @@ import {
   explanationSchema,
   parseDetection,
   parseExplanation,
+  toCloudSchema,
   type Explanation,
 } from './schemas'
 
 export { InferenceMode }
+export type { DeviceState, DeviceStatus } from './deviceStatus'
 export type Mode = (typeof InferenceMode)[keyof typeof InferenceMode]
 
 /* -------------------------------------------------------------------------- */
@@ -143,24 +146,15 @@ export const QUICK_READ_MAX_CHARS = 12_000
 let ai: AI | null = null
 
 function getAi(): AI {
-  ai ??= getAI(getFirebaseApp(), { backend: new GoogleAIBackend() })
+  // Limited-use App Check tokens are recommended for AI Logic: they allow
+  // replay protection, and some models refuse requests without them.
+  ai ??= getAI(getFirebaseApp(), { backend: new GoogleAIBackend(), useLimitedUseAppCheckTokens: true })
   return ai
 }
 
 /* -------------------------------------------------------------------------- */
 /* On-device model status                                                     */
 /* -------------------------------------------------------------------------- */
-
-export type DeviceStatus = 'checking' | 'unavailable' | 'downloadable' | 'downloading' | 'ready'
-
-export interface DeviceState {
-  status: DeviceStatus
-  /** Whether on-device image input (photo transcription) is usable. */
-  image: boolean
-  /** Download progress from 0 to 1 while downloading, otherwise null. */
-  progress: number | null
-  error: string | null
-}
 
 type ExpectedIO = { type: 'text' | 'image'; languages?: string[] }
 
@@ -174,90 +168,44 @@ const createOptions = (image: boolean, outputLanguage = 'en'): CreateOptions => 
   expectedOutputs: [{ type: 'text', languages: [outputLanguage] }],
 })
 
-let deviceState: DeviceState = { status: 'checking', image: false, progress: null, error: null }
-const deviceListeners = new Set<() => void>()
-let settingUp = false
+/** One ONLY_ON_DEVICE model per capability, used only to prepare the model. */
+const setupModels = new Map<boolean, GenerativeModel>()
 
-function setDeviceState(patch: Partial<DeviceState>) {
-  deviceState = { ...deviceState, ...patch }
-  for (const listener of deviceListeners) listener()
-}
-
-export function subscribeDeviceState(listener: () => void): () => void {
-  deviceListeners.add(listener)
-  return () => deviceListeners.delete(listener)
-}
-
-export function getDeviceState(): DeviceState {
-  return deviceState
-}
-
-/** Read-only availability check. This does not run or download a model. */
-async function probe(options: CreateOptions): Promise<string> {
-  const languageModel = (
-    globalThis as { LanguageModel?: { availability?: (options: CreateOptions) => Promise<string> } }
-  ).LanguageModel
-  if (!languageModel?.availability) return 'unavailable'
-  try {
-    // Never let a browser that does not answer hold up the app.
-    const timeout = new Promise<string>((resolve) => setTimeout(() => resolve('unavailable'), 8000))
-    return await Promise.race([languageModel.availability(options), timeout])
-  } catch {
-    return 'unavailable'
+function setupModel(withImage: boolean): GenerativeModel {
+  let model = setupModels.get(withImage)
+  if (!model) {
+    model = getGenerativeModel(getAi(), {
+      mode: InferenceMode.ONLY_ON_DEVICE,
+      onDeviceParams: { createOptions: createOptions(withImage) },
+    })
+    setupModels.set(withImage, model)
   }
-}
-
-/** Re-checks whether Gemini Nano is usable in this browser. */
-export async function refreshDeviceStatus(): Promise<DeviceState> {
-  const [text, image] = await Promise.all([probe(createOptions(false)), probe(createOptions(true))])
-  if (settingUp && text !== 'available') return deviceState
-
-  const status: DeviceStatus =
-    text === 'available'
-      ? 'ready'
-      : text === 'downloading'
-        ? 'downloading'
-        : text === 'downloadable'
-          ? 'downloadable'
-          : 'unavailable'
-
-  setDeviceState({
-    status,
-    image: status === 'ready' && image === 'available',
-    progress: status === 'downloading' ? deviceState.progress : null,
-  })
-  return deviceState
+  return model
 }
 
 /**
- * Downloads and prepares Gemini Nano. Must be called from a user action such
- * as a button click; the browser refuses to start the download otherwise.
- * The first download can take several minutes.
+ * Model status comes from the SDK's `initializeDeviceModel()` and nothing
+ * else. `'LanguageModel' in globalThis` is feature detection: it reads no
+ * state and calls nothing.
  */
-export async function setUpDeviceModel(): Promise<DeviceState> {
-  if (settingUp) return deviceState
-  settingUp = true
-  setDeviceState({ status: 'downloading', progress: 0, error: null })
+const deviceStore = createDeviceStore({
+  hasOnDeviceApi: () => 'LanguageModel' in globalThis,
+  configured: firebaseConfigured,
+  initialise: (withImage, onProgress) => setupModel(withImage).initializeDeviceModel(onProgress),
+  describeError: (error) => describeError(error),
+})
 
-  try {
-    // Ask for image input too when this browser offers it, so one download
-    // covers both text and photo tasks.
-    const wantsImage = (await probe(createOptions(true))) !== 'unavailable'
-    const model = getGenerativeModel(getAi(), {
-      mode: InferenceMode.ONLY_ON_DEVICE,
-      onDeviceParams: { createOptions: createOptions(wantsImage) },
-    })
-    await model.initializeDeviceModel((progress) => setDeviceState({ progress }))
-  } catch (error) {
-    settingUp = false
-    await refreshDeviceStatus()
-    setDeviceState({ error: describeError(error) })
-    return deviceState
-  }
+export const subscribeDeviceState = deviceStore.subscribe
+export const getDeviceState = deviceStore.getState
 
-  settingUp = false
-  return refreshDeviceStatus()
-}
+/** Re-checks whether Gemini Nano is usable, when a re-check is safe. */
+export const refreshDeviceStatus = deviceStore.refresh
+
+/**
+ * Downloads and prepares Gemini Nano through the SDK. Must be called from a
+ * user action such as a button click.
+ */
+export const setUpDeviceModel = deviceStore.setUp
 
 /* -------------------------------------------------------------------------- */
 /* Errors                                                                     */
@@ -283,7 +231,7 @@ export function describeError(error: unknown): string {
   if (error instanceof AIError) {
     const message = error.message.replace(/^AI: /, '')
     if (/app ?check|appcheck|unauthenticated|401|403/i.test(message)) {
-      return `The cloud refused the request. This usually means App Check is not set up for this site yet (register the debug token in the Firebase console). Details: ${message}`
+      return `The cloud refused the request. This usually means App Check is not set up for this site yet (register the debug token in the Firebase console under Security, App Check, Apps, Manage debug tokens). Details: ${message}`
     }
     if (/429|quota|rate/i.test(message)) {
       return 'The cloud model is rate-limited right now. Wait a minute and try again.'
@@ -332,7 +280,11 @@ function modelFor(mode: Mode, request: Request): GenerativeModel {
       inCloudParams: {
         model: CLOUD_MODEL,
         generationConfig: request.schema
-          ? { responseMimeType: 'application/json', responseJsonSchema: { ...request.schema.value }, temperature: 0.2 }
+          ? {
+              responseMimeType: 'application/json',
+              responseSchema: toCloudSchema(request.schema.value) as SchemaRequest,
+              temperature: 0.2,
+            }
           : { temperature: 0.3 },
       },
       onDeviceParams: {
@@ -348,8 +300,8 @@ function modelFor(mode: Mode, request: Request): GenerativeModel {
 async function generate(mode: Mode, request: Request): Promise<{ text: string; source: InferenceSourceName }> {
   const parts: Array<string | Part> = request.image
     ? [
-        { type: 'inlineData', inlineData: { mimeType: request.image.mimeType, data: request.image.data } },
         request.prompt,
+        { type: 'inlineData', inlineData: { mimeType: request.image.mimeType, data: request.image.data } },
       ]
     : [request.prompt]
 
