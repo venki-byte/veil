@@ -3,6 +3,8 @@ import { useDeviceModel } from './ai/useDeviceModel'
 import { Header } from './components/Header'
 import { useHashRoute } from './components/useHashRoute'
 import { useOnline } from './components/useOnline'
+import { AnswerTools } from './features/explain/AnswerTools'
+import { FollowUpBox } from './features/followup/FollowUpBox'
 import { IngestPanel } from './features/ingest/IngestPanel'
 import { RoutingCheck } from './features/routing/RoutingCheck'
 import { useSession } from './features/session/useSession'
@@ -56,7 +58,13 @@ export default function App() {
         ) : session.stage === 'reading' ? (
           <Reading label={session.readingLabel} onCancel={session.reset} />
         ) : (
-          <Workspace session={session} device={device} online={online} />
+          <Workspace
+            session={session}
+            device={device}
+            online={online}
+            tools={<AnswerTools session={session} />}
+            followUp={<FollowUpBox session={session} online={online} />}
+          />
         )}
       </main>
       <LedgerDrawer open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
