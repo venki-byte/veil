@@ -63,6 +63,8 @@ const PLACEHOLDER_PATTERN = new RegExp(
   'gi',
 )
 
+const HONORIFIC = /^(?:(?:mr|mrs|ms|miss|mx|dr|prof|shri|smt|sri|kumari|late)\.?\s+)+/i
+
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
@@ -126,7 +128,10 @@ export class Registry {
    * Returns null for values that are too short or too vague to hide safely.
    */
   add(rawValue: string, type: SensitiveType, source: SpanSource): Entry | null {
-    const value = tidy(rawValue)
+    let value = tidy(rawValue)
+    // "Mrs. Meenakshi Raghavan" and "Meenakshi Raghavan" are the same person:
+    // the title stays in the text and only the name is hidden.
+    if (type === 'PERSON') value = tidy(value.replace(HONORIFIC, ''))
     if (value.length < 2 || value.length > 200) return null
     if (!/[\p{L}\p{N}]/u.test(value)) return null
     // Never register something that looks like one of our own placeholders.

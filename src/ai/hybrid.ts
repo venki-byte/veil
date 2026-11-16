@@ -199,7 +199,9 @@ async function probe(options: CreateOptions): Promise<string> {
   ).LanguageModel
   if (!languageModel?.availability) return 'unavailable'
   try {
-    return await languageModel.availability(options)
+    // Never let a browser that does not answer hold up the app.
+    const timeout = new Promise<string>((resolve) => setTimeout(() => resolve('unavailable'), 8000))
+    return await Promise.race([languageModel.availability(options), timeout])
   } catch {
     return 'unavailable'
   }

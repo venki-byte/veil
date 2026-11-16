@@ -32,6 +32,14 @@ describe('Registry: placeholders', () => {
     expect(registry.size).toBe(1)
   })
 
+  it('treats a name with and without a title as the same person', () => {
+    const registry = new Registry()
+    const person = registry.add('Meenakshi Raghavan', 'PERSON', 'regex')
+    expect(registry.add('Mrs. Meenakshi Raghavan', 'PERSON', 'nano')).toBe(person)
+    expect(registry.add('Dr. Anil Deshpande', 'PERSON', 'nano')?.value).toBe('Anil Deshpande')
+    expect(registry.redact('Mrs. Meenakshi Raghavan saw Dr. Anil Deshpande')).toBe('Mrs. [PERSON_1] saw Dr. [PERSON_2]')
+  })
+
   it('rejects values that are too short, empty or placeholder-like', () => {
     const registry = new Registry()
     expect(registry.add('A', 'PERSON', 'nano')).toBeNull()

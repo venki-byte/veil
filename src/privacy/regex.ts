@@ -138,8 +138,8 @@ function cleanLabelledValue(raw: string, maxWords: number): { text: string; offs
   let offset = raw.length - raw.trimStart().length
   let text = raw.trim()
 
-  // A value ends at a wide gap or tab: tables often put the next field there.
-  const gap = text.search(/\t|\s{3,}/)
+  // A value ends at a double space or tab: tables often put the next field there.
+  const gap = text.search(/\t|\s{2,}/)
   if (gap > 0) text = text.slice(0, gap)
 
   const honorific = text.match(HONORIFIC)
