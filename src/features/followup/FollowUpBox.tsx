@@ -20,11 +20,17 @@ export function FollowUpBox({ session, online }: { session: Session; online: boo
         <h3 id="followup-title" className="text-sm font-semibold">
           Ask a follow-up question
         </h3>
-        <ModeChip mode={ROUTES.followUp.mode} />
+        <ModeChip mode={session.strictTrail ? ROUTES.followUpOnDevice.mode : ROUTES.followUp.mode} />
       </div>
       <p className="mt-0.5 text-xs leading-relaxed text-muted">
-        Names and numbers in your question are swapped for the same placeholders before it is sent.
-        {!online && ' You are offline, so Gemini Nano will answer on this device.'}
+        {session.strictTrail ? (
+          'This explanation was made in strict mode, so follow-up questions are answered by Gemini Nano on this device. The document still never leaves.'
+        ) : (
+          <>
+            Names and numbers in your question are swapped for the same placeholders before it is sent.
+            {!online && ' You are offline, so Gemini Nano will answer on this device.'}
+          </>
+        )}
       </p>
 
       {session.followUps.length > 0 && (

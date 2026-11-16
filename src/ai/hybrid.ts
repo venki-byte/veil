@@ -35,6 +35,7 @@ import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import { createDeviceStore } from './deviceStatus'
 import {
+  classifyPrompt,
   definePrompt,
   detectPrompt,
   explainPrompt,
@@ -43,19 +44,38 @@ import {
   quickReadPrompt,
   routeCheckPrompt,
   simplifyPrompt,
+  strictAnswerPrompt,
+  strictCombinePrompt,
+  strictPlanPrompt,
   transcribePrompt,
   translatePrompt,
   type FollowUpTurn,
   type LanguageCode,
 } from './prompts'
 import {
+  answersSchema,
+  classificationSchema,
   detectionSchema,
   explanationSchema,
+  parseAnswers,
+  parseClassification,
   parseDetection,
   parseExplanation,
+  parseJson,
+  questionsSchema,
   toCloudSchema,
   type Explanation,
 } from './schemas'
+import {
+  cleanDocumentType,
+  cleanQuestions,
+  DOCUMENT_TYPES,
+  MAX_QUESTIONS,
+  type ChunkAnswer,
+  type DocumentType,
+  type StrictFact,
+  type StrictQuestion,
+} from './strict'
 
 export { InferenceMode }
 export type { DeviceState, DeviceStatus } from './deviceStatus'
@@ -116,6 +136,33 @@ export const ROUTES = {
     label: 'Follow-up question',
     mode: InferenceMode.PREFER_IN_CLOUD,
     why: 'Best answer quality when online. The question is redacted first, and offline it is still answered on-device.',
+  },
+
+  // Strict mode: the cloud never sees the document, not even redacted.
+  classify: {
+    label: 'Strict: name the kind of document',
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    why: 'Gemini Nano picks one label from a fixed list. That label is the only thing the cloud learns about the document.',
+  },
+  strictPlan: {
+    label: 'Strict: write questions',
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    why: 'The cloud sees only the kind of document and writes the questions to ask about it.',
+  },
+  strictAnswer: {
+    label: 'Strict: answer on device',
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    why: 'Gemini Nano answers each question from the document, chunk by chunk. The document stays on the device.',
+  },
+  strictCombine: {
+    label: 'Strict: explain from answers',
+    mode: InferenceMode.ONLY_IN_CLOUD,
+    why: 'The cloud writes the explanation from short redacted answers. It never receives the document.',
+  },
+  followUpOnDevice: {
+    label: 'Strict: follow-up question',
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    why: 'After strict mode, follow-up questions are answered on-device, so the document still never leaves.',
   },
 } as const satisfies Record<string, Route>
 
@@ -529,6 +576,68 @@ export function answerFollowUp(
   return run(ROUTES.followUp, {
     prompt: followUpPrompt(redactedDocument, history, redactedQuestion),
     registry,
+  })
+}
+
+/* -------------------------------------------------------------------------- */
+/* Strict mode task functions                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * ONLY_ON_DEVICE. Names the kind of document from a fixed list of labels.
+ * The result is cleaned to one of DOCUMENT_TYPES, so no free text from the
+ * document can travel to the cloud through this label.
+ */
+export async function classifyDocument(excerpt: string): Promise<AiResult<DocumentType>> {
+  const result = await run(ROUTES.classify, {
+    prompt: classifyPrompt(excerpt, DOCUMENT_TYPES),
+    schema: { id: 'classification', value: classificationSchema(DOCUMENT_TYPES) },
+  })
+  return { ...result, value: cleanDocumentType(parseClassification(result.value)) }
+}
+
+/** ONLY_IN_CLOUD. The cloud sees only the kind of document and writes questions. */
+export async function planStrictQuestions(documentType: DocumentType, registry: Registry): Promise<AiResult<StrictQuestion[]>> {
+  const result = await run(ROUTES.strictPlan, {
+    // cleanDocumentType again: this function cannot be handed free text.
+    prompt: strictPlanPrompt(cleanDocumentType(documentType), MAX_QUESTIONS),
+    registry,
+    schema: { id: 'questions', value: questionsSchema },
+  })
+  return { ...result, value: cleanQuestions(parseJson(result.value)) }
+}
+
+/** ONLY_ON_DEVICE. Answers the cloud's questions from one chunk of the document. */
+export async function answerOnDevice(chunk: string, questions: StrictQuestion[]): Promise<ChunkAnswer[]> {
+  const result = await run(ROUTES.strictAnswer, {
+    prompt: strictAnswerPrompt(chunk, questions),
+    schema: { id: 'answers', value: answersSchema },
+  })
+  return parseAnswers(result.value)
+}
+
+/** ONLY_IN_CLOUD. Writes the explanation from short redacted answers only. */
+export async function explainFromFacts(
+  documentType: DocumentType,
+  facts: StrictFact[],
+  registry: Registry,
+): Promise<AiResult<Explanation>> {
+  const result = await run(ROUTES.strictCombine, {
+    prompt: strictCombinePrompt(cleanDocumentType(documentType), facts),
+    registry,
+    schema: { id: 'explanation', value: explanationSchema },
+  })
+  return { ...result, value: parseExplanation(result.value) }
+}
+
+/** ONLY_ON_DEVICE. Follow-up after strict mode: the document stays local. */
+export function answerFollowUpOnDevice(
+  redactedDocument: string,
+  history: FollowUpTurn[],
+  redactedQuestion: string,
+): Promise<AiResult<string>> {
+  return run(ROUTES.followUpOnDevice, {
+    prompt: followUpPrompt(redactedDocument.slice(0, QUICK_READ_MAX_CHARS), history, redactedQuestion),
   })
 }
 

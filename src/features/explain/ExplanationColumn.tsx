@@ -3,6 +3,7 @@ import { ROUTES, type DeviceState } from '../../ai/hybrid'
 import { Icon } from '../../components/Icon'
 import { SourceBadge } from '../../components/SourceBadge'
 import type { Session } from '../session/useSession'
+import { StrictProgress, StrictTrailPanel } from '../strict/StrictPanels'
 import { Rehydrated } from './Rehydrated'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -83,11 +84,14 @@ export function ExplanationColumn({ session, online, tools, followUp }: Explanat
   const { explanation, quick, registry } = session
   const explaining = session.busy.includes('explain')
   const quickReading = session.busy.includes('quick')
+  const strictRunning = session.busy.includes('strict')
 
   if (!session.hasAnswer) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {explaining ? (
+        {strictRunning ? (
+          <StrictProgress step={session.strictStep} />
+        ) : explaining ? (
           <Loading label="Cloud Gemini is reading the redacted text" />
         ) : quickReading ? (
           <Loading label="Gemini Nano is writing a quick read on this device" />
@@ -102,10 +106,20 @@ export function ExplanationColumn({ session, online, tools, followUp }: Explanat
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      {strictRunning && (
+        <div className="-mx-5 -mt-5 mb-5 border-b border-line bg-stone-50">
+          <StrictProgress step={session.strictStep} />
+        </div>
+      )}
       {result && explanation ? (
         <article className="fade-in">
           <header>
             <div className="flex flex-wrap items-center gap-1.5">
+              {session.strictTrail && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-device-900 px-2 py-0.5 font-mono text-[11px] font-medium tracking-wide text-white">
+                  <Icon name="lock" size={12} /> STRICT
+                </span>
+              )}
               <SourceBadge source={explanation.source} durationMs={explanation.durationMs} />
               <SourceBadge source="local_code" />
               <span className="text-[11px] text-muted">names restored here</span>
@@ -118,6 +132,8 @@ export function ExplanationColumn({ session, online, tools, followUp }: Explanat
           <p className="mt-3 text-[15px] leading-relaxed text-stone-800">
             <Rehydrated text={result.summary} registry={registry} />
           </p>
+
+          {session.strictTrail && <StrictTrailPanel trail={session.strictTrail} />}
 
           {result.thingsToWatch.length > 0 && (
             <Section title="Things to watch">

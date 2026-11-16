@@ -67,6 +67,38 @@ export const explanationSchema = {
   required: ['documentType', 'summary', 'keyTerms', 'thingsToWatch', 'deadlinesAndAmounts', 'questionsToAsk'],
 } as const
 
+/* Strict mode schemas. */
+
+export const classificationSchema = (labels: readonly string[]) => ({
+  type: 'object',
+  properties: { documentType: { type: 'string', enum: [...labels] } },
+  required: ['documentType'],
+  additionalProperties: false,
+})
+
+export const questionsSchema = {
+  type: 'object',
+  properties: { questions: { type: 'array', items: { type: 'string' } } },
+  required: ['questions'],
+} as const
+
+export const answersSchema = {
+  type: 'object',
+  properties: {
+    answers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, answer: { type: 'string' } },
+        required: ['id', 'answer'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['answers'],
+  additionalProperties: false,
+} as const
+
 /**
  * The cloud `responseSchema` takes a subset of JSON Schema. Keywords it does
  * not know are removed here, so one schema definition serves both paths.
@@ -132,6 +164,26 @@ export function parseDetection(text: string): Array<{ text: string; type: string
   return asArray(root.spans)
     .map((item) => ({ text: asString(asRecord(item).text), type: asString(asRecord(item).type) }))
     .filter((item) => item.text.length > 0)
+}
+
+/** The label from a classification answer, or an empty string. */
+export function parseClassification(text: string): string {
+  try {
+    return asString(asRecord(parseJson(text)).documentType)
+  } catch {
+    // A model without JSON support may answer with the bare label.
+    return text.trim().replace(/^["']+|["'.]+$/g, '')
+  }
+}
+
+export function parseAnswers(text: string): Array<{ id: string; answer: string }> {
+  const root = asRecord(parseJson(text))
+  return asArray(root.answers)
+    .map((item) => ({
+      id: asString(asRecord(item).id).toUpperCase().replace(/[^A-Z0-9]/g, ''),
+      answer: asString(asRecord(item).answer),
+    }))
+    .filter((item) => item.id.length > 0)
 }
 
 export function parseExplanation(text: string): Explanation {

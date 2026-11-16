@@ -19,6 +19,14 @@ const EXPLAIN_NOT_ADVISE = `- Explain what the document says. Do not give medica
 - Write for a reader with no specialist knowledge: short sentences and everyday words.
 - Plain text only. No Markdown, no bullet symbols, no headings.`
 
+const EXPLANATION_FIELDS = `Return JSON with these fields:
+- documentType: a short name for the kind of document, for example "Blood test report" or "Home loan sanction letter".
+- summary: 3 to 5 sentences on what this document is and what it means for the reader.
+- keyTerms: up to 8 terms from the document that a reader may not know, each with a one-sentence meaning in everyday words.
+- thingsToWatch: up to 6 points that deserve the reader's attention, such as results outside the reference range, unusual or one-sided clauses, penalties, conditions and obligations. Each has a short title and a one or two sentence detail that says what the document states.
+- deadlinesAndAmounts: every deadline, date, amount, rate, fee or out-of-range result that matters. Each has a label, the value exactly as written in the document, and a short note.
+- questionsToAsk: 3 to 5 questions the reader could ask the doctor, landlord, lender or official who issued the document.`
+
 export const LANGUAGES = {
   hi: { name: 'Hindi', native: 'हिन्दी' },
   ta: { name: 'Tamil', native: 'தமிழ்' },
@@ -69,18 +77,79 @@ export function explainPrompt(redactedDocument: string): string {
 ${PLACEHOLDER_RULES}
 ${EXPLAIN_NOT_ADVISE}
 
-Return JSON with these fields:
-- documentType: a short name for the kind of document, for example "Blood test report" or "Home loan sanction letter".
-- summary: 3 to 5 sentences on what this document is and what it means for the reader.
-- keyTerms: up to 8 terms from the document that a reader may not know, each with a one-sentence meaning in everyday words.
-- thingsToWatch: up to 6 points that deserve the reader's attention, such as results outside the reference range, unusual or one-sided clauses, penalties, conditions and obligations. Each has a short title and a one or two sentence detail that says what the document states.
-- deadlinesAndAmounts: every deadline, date, amount, rate, fee or out-of-range result that matters. Each has a label, the value exactly as written in the document, and a short note.
-- questionsToAsk: 3 to 5 questions the reader could ask the doctor, landlord, lender or official who issued the document.
+${EXPLANATION_FIELDS}
 
 Document:
 """
 ${redactedDocument}
 """`
+}
+
+/* ------------------------------- Strict mode ------------------------------ */
+
+/** On-device: pick the kind of document from a fixed list of labels. */
+export function classifyPrompt(excerpt: string, labels: readonly string[]): string {
+  return `Choose the one label that best describes what kind of document this excerpt comes from.
+
+Labels:
+${labels.map((label) => `- ${label}`).join('\n')}
+
+Answer with exactly one of the labels. If none fits, answer "other document".
+
+Excerpt:
+"""
+${excerpt}
+"""`
+}
+
+/** In-cloud: sees only the kind of document, and writes questions to ask about it. */
+export function strictPlanPrompt(documentType: string, maxQuestions: number): string {
+  return `You are helping to explain a personal document that you are not allowed to see. All you know is its kind: "${documentType}".
+
+A small model on the reader's device can read the document. Write the questions it should answer, so that you can later explain the document in plain language.
+
+Rules:
+- Write 6 to ${maxQuestions} questions.
+- Each question asks for one specific fact that can be answered in a few words or one short sentence from the document: an amount, a date, a duration, a rate, a result with its reference range, a condition, a penalty.
+- Together the questions should cover: what the document is for, the key amounts and dates, deadlines, obligations and conditions, penalties or risks, anything marked abnormal or unusual, and what the reader is asked to do next.
+- Do not ask for names, addresses, phone numbers, ID numbers or account numbers.
+- Plain text, one question per item.
+
+Return JSON with one field, questions, a list of strings.`
+}
+
+/** On-device: answer the cloud's questions from one chunk of the document. */
+export function strictAnswerPrompt(chunk: string, questions: Array<{ id: string; question: string }>): string {
+  return `Answer each question using only the excerpt below.
+- Keep each answer short: a few words or one short sentence of at most 30 words.
+- Copy amounts, dates and numbers exactly as written.
+- The excerpt contains placeholders such as [PERSON_1] or [ORG_1]. Keep them exactly as written.
+- If the excerpt does not contain the answer, answer exactly: NOT FOUND
+- Give one answer for every question id.
+
+Questions:
+${questions.map((item) => `${item.id}: ${item.question}`).join('\n')}
+
+Excerpt:
+"""
+${chunk}
+"""`
+}
+
+/** In-cloud: write the explanation from short answers, without the document. */
+export function strictCombinePrompt(documentType: string, facts: Array<{ question: string; answer: string }>): string {
+  return `You are Veil, a careful assistant that explains personal paperwork in plain language.
+
+You have not seen the document, and you will not see it. A model on the reader's device read it and answered questions about it. The document is a "${documentType}". The answers are below.
+
+${PLACEHOLDER_RULES}
+${EXPLAIN_NOT_ADVISE}
+- Base everything on the answers below. Do not invent facts. If the answers leave something out, say that it could not be determined rather than guessing.
+
+${EXPLANATION_FIELDS}
+
+Answers from the reader's device:
+${facts.map((fact) => `Q: ${fact.question}\nA: ${fact.answer}`).join('\n\n')}`
 }
 
 /** Prefer on-device: a short summary that also works with no connection. */

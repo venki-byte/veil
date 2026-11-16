@@ -65,7 +65,7 @@ export function Workspace({ session, device, online, tools, followUp }: Workspac
 
   // On small screens one column shows at a time. Follow the flow unless the
   // user has picked a tab themselves.
-  const tab: Tab = picked ?? (session.hasAnswer || session.busy.includes('explain') ? 'explanation' : 'outbound')
+  const tab: Tab = picked ?? (session.hasAnswer || session.busy.includes('explain') || session.busy.includes('strict') ? 'explanation' : 'outbound')
 
   const detectionSource: BadgeSource = detection?.nanoUsed ? 'on_device' : 'local_code'
   const answerSource = session.explanation?.source ?? session.quick?.source
@@ -146,7 +146,11 @@ export function Workspace({ session, device, online, tools, followUp }: Workspac
           id="explanation"
           active={tab}
           title="Explanation"
-          subtitle="Written from the redacted text. Real names are put back here."
+          subtitle={
+            session.strictTrail
+              ? 'Written from short answers only. Real names are put back here.'
+              : 'Written from the redacted text. Real names are put back here.'
+          }
           icon="sparkle"
           tone="bg-device-50/60"
           badges={answerSource ? <SourceBadge source={answerSource} /> : null}

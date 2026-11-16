@@ -9,15 +9,21 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   answerFollowUp,
+  answerFollowUpOnDevice,
+  answerOnDevice,
+  classifyDocument,
   defineTerm,
   describeError,
   detectSensitive,
   explainDocument,
+  explainFromFacts,
   getDeviceState,
   LeakBlockedError,
+  planStrictQuestions,
   quickRead,
   QUICK_READ_MAX_CHARS,
   refreshDeviceStatus,
+  ROUTES,
   simplify,
   transcribeImage,
   translate,
@@ -25,6 +31,7 @@ import {
 } from '../../ai/hybrid'
 import type { LanguageCode } from '../../ai/prompts'
 import type { Explanation } from '../../ai/schemas'
+import { runStrict, type DocumentType, type StrictFact, type StrictStep } from '../../ai/strict'
 import { firebaseConfigured } from '../../firebase'
 import type { InferenceSourceName } from '../../ledger/store'
 import { detectDocument } from '../../privacy/detect'
@@ -69,6 +76,13 @@ export interface FollowUp {
   error?: string
 }
 
+/** What the cloud was given in place of the document, in strict mode. */
+export interface StrictTrail {
+  documentType: DocumentType
+  facts: StrictFact[]
+  failedChunks: number
+}
+
 const toTextResult = (result: AiResult<string>): TextResult => ({
   text: result.value.trim(),
   source: result.source,
@@ -93,6 +107,8 @@ export function useSession() {
 
   const [explanation, setExplanation] = useState<AiResult<Explanation> | null>(null)
   const [quick, setQuick] = useState<TextResult | null>(null)
+  const [strictStep, setStrictStep] = useState<StrictStep | null>(null)
+  const [strictTrail, setStrictTrail] = useState<StrictTrail | null>(null)
   const [simple, setSimple] = useState<TextResult | null>(null)
   const [translations, setTranslations] = useState<Partial<Record<LanguageCode, TextResult>>>({})
   const [terms, setTerms] = useState<Record<string, TextResult>>({})
@@ -110,6 +126,8 @@ export function useSession() {
 
   const clearResults = useCallback(() => {
     setExplanation(null)
+    setStrictStep(null)
+    setStrictTrail(null)
     setQuick(null)
     setSimple(null)
     setTranslations({})
@@ -326,6 +344,7 @@ export function useSession() {
       const result = await explainDocument(registry.redact(doc.text), registry)
       if (run !== runId.current) return
       setExplanation(result)
+      setStrictTrail(null)
       setSimple(null)
       setTranslations({})
       setStage('result')
@@ -335,6 +354,49 @@ export function useSession() {
       setError(describeError(caught))
     } finally {
       finish('explain')
+    }
+  }, [doc, registry])
+
+  /**
+   * Strict mode: the cloud never receives the document. It sees the kind of
+   * document, writes questions, and later sees Gemini Nano's short answers.
+   */
+  const runStrictMode = useCallback(async () => {
+    if (!doc) return
+    const run = runId.current
+    const started = performance.now()
+    setError(null)
+    setLeaks(null)
+    start('strict')
+    try {
+      const outcome = await runStrict(registry.redact(doc.text), {
+        classify: async (excerpt) => (await classifyDocument(excerpt)).value,
+        plan: async (documentType) => (await planStrictQuestions(documentType, registry)).value,
+        answer: answerOnDevice,
+        combine: async (documentType, facts) => (await explainFromFacts(documentType, facts, registry)).value,
+        redact: (text) => registry.redact(text),
+        onStep: (step) => {
+          if (run === runId.current) setStrictStep(step)
+        },
+      })
+      if (run !== runId.current) return
+      setExplanation({
+        value: outcome.explanation,
+        source: 'in_cloud',
+        mode: ROUTES.strictCombine.mode,
+        durationMs: Math.round(performance.now() - started),
+      })
+      setStrictTrail({ documentType: outcome.documentType, facts: outcome.facts, failedChunks: outcome.failedChunks })
+      setSimple(null)
+      setTranslations({})
+      setStage('result')
+    } catch (caught) {
+      if (run !== runId.current) return
+      if (caught instanceof LeakBlockedError) setLeaks(caught.leaks)
+      setError(describeError(caught))
+    } finally {
+      finish('strict')
+      if (run === runId.current) setStrictStep(null)
     }
   }, [doc, registry])
 
@@ -433,7 +495,11 @@ export function useSession() {
       setFollowUps((current) => [...current, { id, question, redactedQuestion, status: 'pending' }])
       start('ask')
       try {
-        const result = await answerFollowUp(registry.redact(doc.text), history, redactedQuestion, registry)
+        // After strict mode the document must still never leave, so the
+        // follow-up is answered by Gemini Nano on this device.
+        const result = strictTrail
+          ? await answerFollowUpOnDevice(registry.redact(doc.text), history, redactedQuestion)
+          : await answerFollowUp(registry.redact(doc.text), history, redactedQuestion, registry)
         if (run !== runId.current) return
         setFollowUps((current) =>
           current.map((item) => (item.id === id ? { ...item, status: 'done', answer: toTextResult(result) } : item)),
@@ -447,7 +513,7 @@ export function useSession() {
         finish('ask')
       }
     },
-    [doc, followUps, registry],
+    [doc, followUps, registry, strictTrail],
   )
 
   return {
@@ -464,6 +530,8 @@ export function useSession() {
     busy,
     explanation,
     quick,
+    strictStep,
+    strictTrail,
     quickTruncated: redacted.length > QUICK_READ_MAX_CHARS,
     simple,
     translations,
@@ -478,6 +546,7 @@ export function useSession() {
     setEntryEnabled,
     addManual,
     explain,
+    runStrictMode,
     runQuickRead,
     runSimplify,
     runTranslate,

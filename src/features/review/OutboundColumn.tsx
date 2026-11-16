@@ -87,9 +87,12 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
   const reduced = !detecting && detection !== null && (!detection.nanoUsed || detection.nanoFailures > 0)
   const explaining = session.busy.includes('explain')
   const quickReading = session.busy.includes('quick')
+  const strictRunning = session.busy.includes('strict')
   const deviceReady = device.status === 'ready'
   const guardPassed = liveLeaks.length === 0
-  const canSend = !detecting && guardPassed && firebaseConfigured && (!reduced || reviewed)
+  // One explanation at a time: the standard and strict runs do not overlap.
+  const canSend =
+    !detecting && guardPassed && firebaseConfigured && (!reduced || reviewed) && !explaining && !strictRunning
 
   const addManual = () => {
     const ok = session.addManual(manualValue, manualType)
@@ -100,6 +103,16 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {session.strictTrail && (
+          <p role="status" className="flex items-start gap-2 border-b border-device-200 bg-device-50 px-4 py-3 text-xs leading-relaxed text-device-900">
+            <Icon name="lock" size={14} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">Strict mode was used, so the text below was not sent.</span> The cloud
+              received only the kind of document and {session.strictTrail.facts.length} short answers. They are listed
+              with the explanation.
+            </span>
+          </p>
+        )}
         {reduced && (
           <div role="alert" className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
             <p className="flex items-center gap-1.5 font-semibold">
@@ -249,7 +262,7 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
           {online ? (
             <button
               type="button"
-              disabled={!canSend || explaining}
+              disabled={!canSend}
               onClick={() => void session.explain()}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-cloud-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-cloud-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -276,6 +289,17 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
               <Icon name="chip" /> {quickReading ? 'Reading' : 'Quick read on this device'}
             </button>
           )}
+          {deviceReady && online && (
+            <button
+              type="button"
+              disabled={!canSend}
+              onClick={() => void session.runStrictMode()}
+              title="The cloud never receives this text. It sees only the kind of document and short answers written by Gemini Nano on this device."
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-stone-800 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Icon name="lock" /> {strictRunning ? 'Strict mode running' : 'Strict mode'}
+            </button>
+          )}
         </div>
 
         <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
@@ -283,6 +307,7 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
             <>
               <ModeChip mode={ROUTES.explain.mode} /> {session.redacted.length.toLocaleString()} characters of redacted
               text plus fixed instructions. The exact request is in the privacy ledger.
+              {deviceReady && ' Strict mode sends none of this text: only the kind of document and short answers.'}
             </>
           ) : deviceReady ? (
             <>
