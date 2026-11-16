@@ -10,6 +10,12 @@ Built for #BuildHybridAI 2026 with **Firebase AI Logic** and the **Hybrid Infere
 
 > Veil explains documents. It does not give medical, legal or financial advice.
 
+<!-- TODO before submitting: add the hosted URL and the demo video link here. -->
+
+<!-- TODO before submitting: add screenshots here (three-column view, privacy ledger,
+     leak test, routing check). Suggested files: docs/screenshot-workspace.png,
+     docs/screenshot-ledger.png, docs/screenshot-leak-test.png. -->
+
 ## The problem
 
 A cloud chatbot would explain your blood test or loan letter well. But pasting it in means
@@ -27,9 +33,13 @@ avoid AI for these documents or share more than they should.
 3. **Your device puts the names back.** The answer comes back with placeholders. Plain code in
    the browser tab restores the real values for display.
 
-The app shows three columns side by side: **Original** (never leaves the device),
-**What leaves this device** (the redacted text), and **Explanation** (real names restored
-locally).
+The app shows three columns side by side:
+
+| Column | What it shows |
+| --- | --- |
+| **Original** | Your document. It never leaves the device. Hidden details are highlighted. |
+| **What leaves this device** | The redacted text, exactly as it would be sent, with a switch for every hidden detail. |
+| **Explanation** | A summary, things to watch, deadlines and amounts, key terms and questions to ask, with real names restored locally. |
 
 ## Why hybrid
 
@@ -38,92 +48,199 @@ Firebase AI Logic inference modes are used, each for a stated reason:
 
 | Mode | Used for | Why |
 | --- | --- | --- |
-| `ONLY_ON_DEVICE` | Transcribe a photo, detect personal details | Raw data must never leave. If Gemini Nano is missing, Veil fails visibly rather than leak. |
-| `ONLY_IN_CLOUD` | Full explanation of the redacted text | Needs strong reasoning and long context. The input is already redacted and has passed the leak guard. |
+| `ONLY_ON_DEVICE` | Transcribe a photo; detect personal details; strict mode's local steps | Raw data must never leave. If Gemini Nano is missing, Veil fails visibly rather than leak. |
+| `ONLY_IN_CLOUD` | Full explanation of the redacted text; strict mode's two cloud steps | Needs strong reasoning and long context. The input is already redacted and has passed the leak guard. |
 | `PREFER_ON_DEVICE` | Quick read, simpler words, explain a term, translate | The input is already redacted, so either path is safe; local is free and instant. |
 | `PREFER_IN_CLOUD` | Follow-up questions | Best quality when online; still answers from the device when offline. |
 
-Every result carries a badge showing where it actually ran, read from
-`response.inferenceSource`. The **privacy ledger** lists every model call in the session:
-the task, the mode requested, where it ran, how long it took, and the exact text sent to the
-cloud (or "nothing left this device").
+The routing table lives in one place, [`src/ai/hybrid.ts`](src/ai/hybrid.ts), next to the
+code that enforces it.
 
-The **Routing** page (`#/routing`) runs one harmless call in each mode so you can check the
-routing on your own machine, and includes a live leak guard demonstration.
+### Routing you can see
+
+- **Source badges.** Every result carries a badge showing where it actually ran, read from
+  `response.inferenceSource`: `ON_DEVICE`, `IN_CLOUD`, or `LOCAL CODE` for steps with no
+  model at all.
+- **Privacy ledger.** A drawer listing every model call in the session: the task, the mode
+  requested, where it ran, how long it took, and the exact text sent to the cloud (or
+  "nothing left this device").
+- **Routing check** (`#/routing`). Runs one harmless call in each of the four modes on your
+  own machine and shows where each ran, plus a live leak guard demonstration.
+
+## Strict mode
+
+For the most sensitive documents, the cloud never sees the document at all, not even
+redacted:
+
+1. **On-device:** Gemini Nano names the kind of document, choosing from a fixed list of
+   twelve labels ("loan document", "blood test or lab report", and so on).
+2. **Cloud:** sees only that label and writes up to ten questions to ask about such a
+   document.
+3. **On-device:** Gemini Nano answers the questions from the document, chunk by chunk.
+4. **Cloud:** writes the explanation from those short, redacted answers.
+
+Hard limits in plain code bound what can reach the cloud: the label must be exactly one of
+the twelve (anything else becomes "other document"), there are at most ten questions, and
+each combined answer is capped at 300 characters, redacted again, and checked by the leak
+guard. The explanation panel lists exactly what the cloud received in place of the document.
+After a strict mode run, follow-up questions are answered on-device, so the document still
+never leaves.
+
+Strict mode trades some quality for privacy: the explanation is built from less
+information, so it can be thinner than the standard one.
+
+## Measured, not claimed
+
+The **leak test** (`#/eval`) runs ten synthetic documents containing 70 planted personal
+details through two detectors: pattern matching alone, and pattern matching plus Gemini
+Nano. Scoring is plain code and is done by position: a planted detail counts as hidden only
+if every letter and digit of every occurrence would be replaced by a placeholder. If any
+part would still be visible to the cloud, it counts as leaked.
+
+<!-- TODO before submitting: open #/eval in Chrome with Gemini Nano ready, click
+     "Run the leak test", then "Copy table", and paste the table below in place of this
+     comment. State the Chrome version and machine it was run on. -->
+
+_Results table to be added from a real run. See the note in the source of this file._
+
+The test documents and their planted details are in
+[`src/features/eval/corpus.ts`](src/features/eval/corpus.ts). Every person, organisation,
+address and number in them is invented. Ten documents is a small sample: treat the result
+as an indication, not a guarantee.
 
 ## What makes it trustworthy
 
 - **One door to the models.** [`src/ai/hybrid.ts`](src/ai/hybrid.ts) is the only file that
-  imports `firebase/ai`. There are no direct Prompt API prompts and no direct Gemini API
-  calls. The Gemini API key is never in this code; Firebase AI Logic holds it.
-- **The leak guard is structural.** Any call that could reach the cloud must pass a registry
-  to the wrapper, which checks the outgoing text against every hidden value before sending.
-  It is stricter than the redaction step: it also catches different case, different spacing
-  and regrouped digits.
+  imports `firebase/ai`. Inference, the model download and the model status all go through
+  the SDK. There are no direct Prompt API calls and no direct Gemini API calls anywhere in
+  the app, and the Gemini API key is never in this code; Firebase AI Logic holds it.
+- **The leak guard is structural.** Any call that could reach the cloud must hand the
+  wrapper a registry, and the wrapper checks the outgoing text against every hidden value
+  before sending. It is stricter than the redaction step: it also catches different case,
+  different spacing and regrouped digits.
 - **Photos stay local.** An image can only be passed to an `ONLY_ON_DEVICE` route; the
   wrapper rejects it on any other route.
 - **Deterministic substitution.** Models detect; code replaces. The registry
   ([`src/privacy/registry.ts`](src/privacy/registry.ts)) gives the same value the same
   placeholder every time, and restoring values is an exact lookup. It lives in memory only.
 - **Nothing from the model is trusted blindly.** A value Gemini Nano reports is only used if
-  it really appears in the text.
+  it really appears in the text; field labels and bare amounts are dropped.
 - **You confirm before anything is sent.** Without Gemini Nano, Veil shows a "reduced
   protection" banner and asks for an explicit confirmation.
+- **Nothing is kept.** The document, the registry and the ledger live in memory and are gone
+  when you close the tab.
+
+## Features
+
+- Open a PDF (text extracted locally with pdf.js), a text file, pasted text, or a JPEG/PNG
+  photo of a page (transcribed by Gemini Nano on-device; beta).
+- Review and edit the redaction: switch any detail on or off, select text to hide it, or
+  type a phrase to hide everywhere.
+- Structured explanation: summary, things to watch, deadlines and amounts, key terms,
+  questions to ask.
+- Follow-up questions, with the question itself redacted through the same registry.
+- Simpler words, explain a term, and translation of the answer into Hindi or Tamil.
+- Strict mode.
+- Offline: the app shell loads from a service worker, and Gemini Nano can still produce a
+  quick read. The full explanation is offered when the connection returns.
+- Three one-click sample documents (`#/sample/lab-report`, `#/sample/rental-agreement`,
+  `#/sample/loan-sanction-letter`).
 
 ## Architecture
 
 ```
 src/
   ai/
-    hybrid.ts        The only file that imports firebase/ai. Routing table, leak guard
-                     enforcement, ledger recording, device-model status and setup.
-    prompts.ts       Every prompt, in one place.
-    schemas.ts       JSON Schemas for structured output, and tolerant parsers.
-  privacy/           Deterministic code, fully unit tested. No model calls.
-    regex.ts         Emails, phones, IDs, accounts, dates, labelled names and addresses.
-    chunk.ts         Splits text into short chunks, far below the on-device token limit.
-    spans.ts         Locating values and resolving overlapping findings.
-    detect.ts        Pipeline: regex, then Nano per chunk, then merge.
-    registry.ts      Typed placeholders: redact and rehydrate.
-    leakGuard.ts     Last check before anything leaves the device.
-  ledger/            Privacy ledger store and drawer.
-  features/          ingest, review, explain, followup, routing, session, workspace.
-  firebase.ts        Firebase app and App Check.
-samples/             Three synthetic documents. Every person and number is invented.
+    hybrid.ts         The only file that imports firebase/ai. Routing table, leak guard
+                      enforcement, ledger recording, and one function per task.
+    deviceStatus.ts   Model status (unavailable / needs setup / downloading / ready),
+                      derived from the SDK's initializeDeviceModel(). Plain code.
+    strict.ts         Strict mode flow with the model calls injected. Plain code.
+    prompts.ts        Every prompt, in one place.
+    schemas.ts        JSON Schemas for structured output, and tolerant parsers.
+  privacy/            Deterministic code. No model calls.
+    regex.ts          Emails, phones, IDs, accounts, dates, labelled and titled names.
+    chunk.ts          Splits text into short chunks, far below the on-device token limit.
+    spans.ts          Locating values and resolving overlapping findings.
+    detect.ts         Pipeline: regex, then Gemini Nano per chunk, then merge.
+    registry.ts       Typed placeholders: redact and rehydrate.
+    leakGuard.ts      Last check before anything leaves the device.
+  ledger/             Privacy ledger store and drawer.
+  features/
+    ingest/           Paste, PDF and photo input; sample documents.
+    review/           Original and "What leaves this device" columns.
+    explain/          Explanation column, light tools, local rehydration.
+    followup/         Follow-up questions.
+    strict/           Strict mode progress and "what the cloud saw" panels.
+    eval/             Leak test page, corpus and scoring.
+    routing/          Routing check page.
+    session/          State of one document session.
+    workspace/        The three-column layout.
+  firebase.ts         Firebase app and App Check.
+samples/              Three synthetic documents. Every person and number is invented.
 ```
 
 Pipeline: **ingest** (local) → **detect** (regex + Gemini Nano, local) → **registry** (code)
 → **review** (you) → **leak guard** (code) → **explain** (cloud, redacted only) →
 **rehydrate** (code) → **follow-up** (redacted with the same registry).
 
-Stack: Vite, React, TypeScript, Tailwind CSS, Firebase JS SDK (AI Logic, App Check, Hosting),
-pdf.js for local PDF text extraction, Vitest. There is no custom backend.
+Stack: Vite, React, TypeScript, Tailwind CSS, Firebase JS SDK (AI Logic, App Check,
+Hosting), pdf.js for local PDF text extraction, Vitest. There is no custom backend.
+
+### How Firebase AI Logic is used
+
+- `getAI(app, { backend: new GoogleAIBackend(), useLimitedUseAppCheckTokens: true })`
+- `getGenerativeModel(ai, { mode, inCloudParams, onDeviceParams })` with a mode from the
+  routing table for each task.
+- Structured output on both paths from one schema: `inCloudParams.generationConfig`
+  (`responseMimeType`, `responseSchema`) in the cloud, and
+  `onDeviceParams.promptOptions.responseConstraint` on-device.
+- `model.initializeDeviceModel(onProgress)` for the model download, started from a button
+  click, with a progress bar.
+- `result.response.inferenceSource` for the badge on every result and for the ledger.
+- App Check with the debug provider on localhost and reCAPTCHA Enterprise when hosted.
 
 ## Research this design draws on
+
+<!-- TODO before submitting: link each paper. -->
 
 - **PAAC: Privacy-Aware Agentic Device-Cloud Collaboration.** The device masks sensitive
   spans, the cloud reasons over typed placeholders, and a deterministic on-device registry
   does all substitution and reversal. This is Veil's core pipeline.
-- **Minions (ICML 2025).** Small on-device models do well on narrow jobs over short chunks.
-  Veil gives Gemini Nano one job (find spans) on chunks of about 600 tokens.
+- **Minions: Cost-efficient Collaboration Between On-device and Cloud Language Models
+  (ICML 2025).** Small on-device models do well on narrow jobs over short chunks, and a
+  cloud model that splits work into local subtasks recovers most of the quality. This is
+  the basis for chunked detection and for strict mode.
 - **Bridging On-Device and Cloud LLMs for Collaborative Reasoning (ICML 2026)** and
   **Large Language Models over Networks.** Route by data sensitivity and connectivity, not
   only by model availability.
 
+Nothing is trained or fine-tuned. These ideas are applied through prompts, schemas and
+routing.
+
 ## Requirements
 
 - Chrome 139 or later on desktop, with
-  `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input` enabled, for full protection
-  and photo input. Check with `await LanguageModel.availability()` in DevTools.
+  `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input` set to Enabled, for full
+  protection and photo input. To check your machine, run
+  `await LanguageModel.availability()` in the DevTools console; it should not say
+  `unavailable`.
 - In other browsers Veil still works in a clearly labelled reduced-protection mode
-  (pattern-based redaction plus manual review; photos off).
+  (pattern-based redaction plus manual review; photos and strict mode off).
 - Node.js 20 or later to build.
 
 ## Setup
 
-1. Create a Firebase project. In the console open **AI Logic**, click **Get started** and
-   choose the **Gemini Developer API**. Register a web app.
-2. Install and configure:
+1. Create a Firebase project and register a web app.
+2. Enable AI Logic with the Gemini Developer API. Either open **AI Logic** in the Firebase
+   console and click **Get started**, or run:
+
+   ```bash
+   npx -y firebase-tools@latest login
+   npx -y firebase-tools@latest init ailogic
+   ```
+
+3. Install and configure:
 
    ```bash
    npm install
@@ -131,19 +248,26 @@ pdf.js for local PDF text extraction, Vitest. There is no custom backend.
    npm run dev
    ```
 
-3. Open the app on `localhost`. On the first model call the browser console prints an
-   **App Check debug token**. Register it in the Firebase console under
-   **Security → App Check → Apps → Manage debug tokens**.
-4. Click **Set up private mode** to download Gemini Nano (one time, several minutes).
-5. Open `#/routing` and click **Run all four** to confirm each mode runs where expected.
+4. Open the app on `localhost`. The browser console prints an **App Check debug token**
+   when the page loads. Register it in the Firebase console under
+   **Security → App Check → Apps → Manage debug tokens**. App Check is enforced for
+   Firebase AI Logic, so cloud calls are refused until this is done.
+5. Click **Set up private mode** to download Gemini Nano (one time, several minutes).
+6. Open `#/routing` and click **Run all four** to confirm each mode runs where expected.
 
-For a hosted deployment, set `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` (or
-`VITE_RECAPTCHA_V3_SITE_KEY`) in `.env`, then:
+### Deploying
+
+Set `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` in `.env` (create the key for your hosting domain
+and register it under App Check), then:
 
 ```bash
 npm run build
-npx firebase-tools deploy --only hosting
+npx -y firebase-tools@latest deploy --only hosting
 ```
+
+The debug provider is only active on `localhost`. To use a stronger cloud model for
+explanations, set `VITE_CLOUD_MODEL` in `.env`; the default is the SDK's own default hybrid
+cloud model.
 
 ### Scripts
 
@@ -156,29 +280,44 @@ npx firebase-tools deploy --only hosting
 
 ## Tests
 
-Everything in `src/privacy` is plain code with unit tests: overlapping spans, repeated
-values, the redact/rehydrate round trip, the leak guard blocking planted values, chunk
-limits, and end-to-end redaction of the three sample documents. The model is replaced by a
-fake in unit tests only; the shipped app contains no mocked AI.
+Everything that does not need a model is plain code with unit tests (239 at the time of
+writing):
+
+- `src/privacy`: overlapping spans, repeated values, the redact/rehydrate round trip, the
+  leak guard blocking planted values, chunk limits, and end-to-end redaction of the three
+  sample documents.
+- `src/ai`: the model-status logic, the schema parsers, and the whole strict mode flow,
+  including a test that no document text reaches either cloud step.
+- `src/features/eval`: the leak test scoring, the runner, the Markdown report, and checks
+  that every planted detail in the corpus really appears in its document.
+
+Models are replaced by fakes in unit tests only. The shipped app contains no mocked AI.
 
 ## Limits, stated plainly
 
-- **Redaction is not perfect.** Gemini Nano can miss a name or an address. That is why regex
-  runs first, why you review the redacted text before sending, and why the leak guard exists.
-  The leak guard can only block values that were detected or that you added.
-- **Regex-only mode misses unlabelled names and addresses.** The app says so and asks you to
-  confirm.
+- **Redaction is not perfect.** Gemini Nano can miss a name or an address. That is why
+  regex runs first, why you review the redacted text before sending, and why the leak guard
+  exists. The leak guard can only block values that were detected or that you added.
+- **Regex-only mode misses names and addresses written in sentences.** The app says so and
+  asks you to confirm.
+- **A surname on its own is restored as the full name.** "Mrs. Raghavan" is hidden under
+  the same placeholder as "Meenakshi Raghavan", so the restored answer may show the full
+  name where the original had only the surname.
 - **Photo transcription is beta.** A small on-device model can misread a photographed page.
   Paste and PDF are the main paths.
 - **On-device limits.** Gemini Nano accepts text and JPEG/PNG images up to 9,216 tokens and
   supports a limited set of output languages. Translation to Hindi or Tamil runs on-device
   only if the browser's model supports the language; otherwise the (already redacted) text
   is translated in the cloud, and the badge shows that.
+- **Strict mode is thinner.** The cloud works from at most ten short answers, so it can miss
+  things the standard explanation would catch. Its on-device follow-ups read at most the
+  first 12,000 characters of the document.
 - **Dates and amounts stay visible by default** (except dates of birth), because the cloud
   needs them to explain deadlines and costs. You can hide any of them.
 - **Scanned PDFs** have no text layer; open a photo or screenshot of the page instead.
-- Veil keeps nothing: the document, the registry and the ledger live in memory and are gone
-  when you close the tab.
+- **Model status needs one check at page load.** The SDK has no "is the model ready" call,
+  so Veil asks it to initialise the model. If a download would be needed, the browser
+  refuses without a click and Veil shows the setup button instead.
 
 ## License
 
