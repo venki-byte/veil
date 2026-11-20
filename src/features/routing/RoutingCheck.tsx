@@ -15,6 +15,7 @@ import { ModeChip, RoutingTable } from '../../components/RoutingTable'
 import { SourceBadge } from '../../components/SourceBadge'
 import { useOnline } from '../../components/useOnline'
 import { firebaseConfigured, getAppCheckMode } from '../../firebase'
+import { DiagnosticReport } from './DiagnosticReport'
 
 const MODES: Array<{ mode: Mode; expect: string }> = [
   { mode: InferenceMode.ONLY_ON_DEVICE, expect: 'Always ON_DEVICE. Fails if Gemini Nano is not ready.' },
@@ -100,6 +101,8 @@ export function RoutingCheck({ device }: { device: DeviceState }) {
       <p className="mt-2 text-xs text-muted">
         Cloud model: <span className="font-mono">{CLOUD_MODEL}</span>. The App Check debug token is printed in the browser console when the page loads.
       </p>
+
+      <DiagnosticReport device={device} />
 
       <div className="mt-8 flex items-center justify-between gap-4">
         <h2 className="font-serif text-xl text-device-900">One call per mode</h2>
