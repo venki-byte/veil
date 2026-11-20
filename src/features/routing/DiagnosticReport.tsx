@@ -1,29 +1,45 @@
 import { useRef, useState } from 'react'
 import {
+  answerFollowUp,
+  answerFollowUpOnDevice,
+  answerOnDevice,
+  classifyDocument,
   CLOUD_MODEL,
+  defineTerm,
   describeError,
   detectSensitive,
   explainDocument,
+  explainFromFacts,
   getDeviceState,
   LeakBlockedError,
+  planStrictQuestions,
+  quickRead,
   refreshDeviceStatus,
   runLeakGuardDemo,
   runRouteCheck,
+  simplify,
+  translate,
   type DeviceState,
   type Mode,
 } from '../../ai/hybrid'
 import { Icon } from '../../components/Icon'
 import { useOnline } from '../../components/useOnline'
 import { getConsoleEntries } from '../../diagnostics/consoleLog'
-import { buildReport } from '../../diagnostics/report'
+import { E2E_TOTAL, runEndToEnd } from '../../diagnostics/e2e'
+import { buildReport, type CheckOutcome } from '../../diagnostics/report'
 import { runDiagnostics } from '../../diagnostics/run'
 import { firebaseConfigured, getAppCheckMode } from '../../firebase'
 import { getLedger } from '../../ledger/store'
 import { Registry } from '../../privacy/registry'
+import { SAMPLES } from '../ingest/samples'
 
-type Phase = { name: 'idle' } | { name: 'running'; done: number; total: number; title: string } | { name: 'done'; copied: boolean | null }
+type Kind = 'quick' | 'full'
+type Phase =
+  | { name: 'idle' }
+  | { name: 'running'; kind: Kind; done: number; total: number; title: string }
+  | { name: 'done'; copied: boolean | null }
 
-/** The registry the explanation check uses. Both values are invented. */
+/** The registry the quick report's explanation check uses. Both values are invented. */
 function sampleRegistry(): Registry {
   const registry = new Registry()
   registry.add('Asha Verma', 'PERSON', 'manual')
@@ -31,9 +47,18 @@ function sampleRegistry(): Registry {
   return registry
 }
 
+const NOT_CONFIGURED: CheckOutcome[] = [
+  {
+    title: 'Firebase configuration',
+    expected: 'values present in .env',
+    status: 'fail',
+    detail: 'Firebase is not configured, so no model call can run. Check that .env exists and restart the dev server.',
+  },
+]
+
 /**
- * One button: runs every check, builds a plain-text report, and copies it to
- * the clipboard so it can be pasted into a chat. The report never contains
+ * Two buttons that run checks, build a plain-text report, and copy it to the
+ * clipboard so it can be pasted into a chat. The report never contains
  * document text, API keys or tokens.
  */
 export function DiagnosticReport({ device }: { device: DeviceState }) {
@@ -42,35 +67,63 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
   const [report, setReport] = useState('')
   const textarea = useRef<HTMLTextAreaElement>(null)
 
-  const run = async () => {
+  const run = async (kind: Kind) => {
     setReport('')
-    setPhase({ name: 'running', done: 0, total: 7, title: 'Starting' })
+    setPhase({ name: 'running', kind, done: 0, total: kind === 'quick' ? 7 : E2E_TOTAL, title: 'Starting' })
     // Use a fresh look at the model: the page may have been open for a while.
     const current = firebaseConfigured ? await refreshDeviceStatus() : getDeviceState()
+    const onProgress = (done: number, total: number, title: string) => setPhase({ name: 'running', kind, done, total, title })
 
-    const outcomes = firebaseConfigured
-      ? await runDiagnostics({
-          routeCheck: async (mode) => {
-            const result = await runRouteCheck(mode as Mode)
-            return { source: result.source, durationMs: result.durationMs, value: result.value }
-          },
-          detect: detectSensitive,
-          explain: (redacted) => explainDocument(redacted, sampleRegistry()),
-          leakDemo: runLeakGuardDemo,
-          isLeakBlocked: (error) => error instanceof LeakBlockedError,
-          describeError,
-          deviceReady: () => current.status === 'ready',
-          online: () => navigator.onLine,
-          onProgress: (done, total, title) => setPhase({ name: 'running', done, total, title }),
-        })
-      : [
-          {
-            title: 'Firebase configuration',
-            expected: 'values present in .env',
-            status: 'fail' as const,
-            detail: 'Firebase is not configured, so no model call can run. Check that .env exists and restart the dev server.',
-          },
-        ]
+    let outcomes: CheckOutcome[] = NOT_CONFIGURED
+    let appendix = ''
+
+    if (firebaseConfigured && kind === 'quick') {
+      outcomes = await runDiagnostics({
+        routeCheck: async (mode) => {
+          const result = await runRouteCheck(mode as Mode)
+          return { source: result.source, durationMs: result.durationMs, value: result.value }
+        },
+        detect: detectSensitive,
+        explain: (redacted) => explainDocument(redacted, sampleRegistry()),
+        leakDemo: runLeakGuardDemo,
+        isLeakBlocked: (error) => error instanceof LeakBlockedError,
+        describeError,
+        deviceReady: () => current.status === 'ready',
+        online: () => navigator.onLine,
+        onProgress,
+      })
+    } else if (firebaseConfigured) {
+      const lab = SAMPLES.find((sample) => sample.id === 'lab-report')!
+      const result = await runEndToEnd({
+        sampleText: lab.text,
+        mustBeHidden: ['Meenakshi', 'Raghavan', 'Deshpande', 'Subramaniam', 'Lake View Road'],
+        followUpExpect: '10.8',
+        followUpQuestion: 'What is the haemoglobin result for Meenakshi Raghavan?',
+        term: 'HbA1c',
+
+        detectChunk: detectSensitive,
+        explain: (redacted, registry) => explainDocument(redacted, registry),
+        followUp: (redacted, question, registry) => answerFollowUp(redacted, [], question, registry),
+        simplify,
+        define: defineTerm,
+        translate: (text, registry) => translate(text, 'hi', registry),
+        quickRead,
+
+        classify: async (excerpt) => (await classifyDocument(excerpt)).value,
+        plan: async (type, registry) => (await planStrictQuestions(type, registry)).value,
+        answerOnDevice,
+        combine: async (type, facts, registry) => (await explainFromFacts(type, facts, registry)).value,
+        followUpOnDevice: (redacted, question) => answerFollowUpOnDevice(redacted, [], question),
+
+        ledgerMark: () => getLedger().length,
+        outboundSince: (mark) => getLedger().slice(mark).flatMap((entry) => (entry.outbound === null ? [] : [entry.outbound])),
+
+        describeError,
+        onProgress,
+      })
+      outcomes = result.outcomes
+      appendix = result.appendix
+    }
 
     const text = buildReport({
       generatedAt: new Date(),
@@ -85,6 +138,7 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
       checks: outcomes,
       ledger: getLedger(),
       consoleEntries: getConsoleEntries(),
+      appendix,
     })
     setReport(text)
 
@@ -110,6 +164,8 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
 
   const running = phase.name === 'running'
   const percent = phase.name === 'running' ? Math.max((phase.done / phase.total) * 100, 4) : 0
+  const button =
+    'inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
     <section aria-labelledby="report-title" className="mt-8 rounded-xl border border-device-200 bg-device-50/60 p-4">
@@ -117,20 +173,34 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
         Diagnostic report
       </h2>
       <p className="mt-1 text-sm leading-relaxed text-muted">
-        Runs every check below plus structured output on-device and in the cloud, then copies one plain-text report you
-        can paste into a chat. It contains results and errors only: no document text, no keys, no tokens.
+        Runs checks, then copies one plain-text report you can paste into a chat. It contains results and errors only: no
+        document text, no keys, no tokens.
         {device.status !== 'ready' && ' Gemini Nano is not ready, so the on-device checks will be reported as not passing.'}
         {!online && ' You are offline, so the cloud checks will be reported as not passing.'}
       </p>
 
-      <button
-        type="button"
-        onClick={() => void run()}
-        disabled={running}
-        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-device-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-device-900 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <Icon name="file" /> {running ? 'Running checks' : report ? 'Run again and copy report' : 'Run everything and copy report'}
-      </button>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void run('quick')}
+          disabled={running}
+          className={`${button} border border-device-200 bg-white text-device-700 hover:bg-device-50`}
+        >
+          <Icon name="route" /> Quick report (about 1 minute)
+        </button>
+        <button
+          type="button"
+          onClick={() => void run('full')}
+          disabled={running}
+          className={`${button} bg-device-700 text-white hover:bg-device-900`}
+        >
+          <Icon name="file" /> Full document test (3 to 6 minutes)
+        </button>
+      </div>
+      <p className="mt-1.5 text-xs text-muted">
+        The full test runs a whole sample document through everything: detection, explanation, follow-up, simpler words,
+        Hindi, quick read, strict mode, the leak test with Gemini Nano, and a privacy audit of every cloud request.
+      </p>
 
       {phase.name === 'running' && (
         <div className="mt-3" role="status" aria-live="polite">
@@ -145,7 +215,8 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
             <div className="h-full rounded-full bg-device-600 transition-[width] duration-300" style={{ width: `${percent}%` }} />
           </div>
           <p className="mt-1.5 text-xs text-muted">
-            Check {Math.min(phase.done + 1, phase.total)} of {phase.total}. This can take a minute or two.
+            Check {Math.min(phase.done + 1, phase.total)} of {phase.total}
+            {phase.done > 0 && `. Just finished: ${phase.title}`}. Keep this tab open and in front.
           </p>
         </div>
       )}

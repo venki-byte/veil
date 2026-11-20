@@ -146,6 +146,12 @@ describe('buildReport', () => {
     expect(report).not.toContain('problem number 0')
   })
 
+  it('prints the appendix at the end only when there is one', () => {
+    expect(buildReport(base())).not.toContain('APPENDIX')
+    const report = buildReport(base({ appendix: '| a | b |\n| - | - |' }))
+    expect(report.endsWith('APPENDIX\n| a | b |\n| - | - |')).toBe(true)
+  })
+
   it('says "none" for empty sections and shortens very long text', () => {
     const report = buildReport(base({ ledger: [], checks: [{ title: 't', expected: 'e', status: 'fail', detail: 'x'.repeat(2000), ms: 5 }] }))
     expect(report).toContain('LEDGER (0 calls')

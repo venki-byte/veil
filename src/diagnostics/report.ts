@@ -41,6 +41,8 @@ export interface ReportInput {
   checks: CheckOutcome[]
   ledger: LedgerEntry[]
   consoleEntries: ConsoleEntry[]
+  /** Extra text to print at the end, such as a results table. */
+  appendix?: string
 }
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
@@ -140,6 +142,8 @@ export function buildReport(input: ReportInput): string {
       ? recent.map((entry) => `- ${new Date(entry.time).toISOString().slice(11, 19)} ${entry.level}: ${oneLine(entry.text, 400)}`)
       : ['- none']),
   )
+
+  if (input.appendix) lines.push('', 'APPENDIX', input.appendix)
 
   return lines.join('\n')
 }
