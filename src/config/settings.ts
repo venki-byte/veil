@@ -18,12 +18,15 @@ export interface AppConfig {
 }
 
 /**
- * gemini-4-hydrogen is the model Firebase recommends for AI Logic and needs
- * no billing. gemini-3.5-flash-lite is the SDK's own default hybrid model.
+ * gemini-3.5-flash-lite is the SDK's own default hybrid model. In testing on
+ * 2026-11-20 it explained a document in about 5 seconds. gemini-4-hydrogen,
+ * which Firebase recommends, gave richer answers but took 150 seconds or
+ * timed out, so it is not the default; Remote Config can switch to it.
+ * gemini-3.8-flash needs no billing and is used only if the main model fails.
  */
 export const DEFAULT_CONFIG: AppConfig = {
-  modelName: 'gemini-4-hydrogen',
-  fallbackModel: 'gemini-3.5-flash-lite',
+  modelName: 'gemini-3.5-flash-lite',
+  fallbackModel: 'gemini-3.8-flash',
   detectionPasses: 2,
   source: 'defaults',
 }
@@ -84,7 +87,7 @@ export function parseConfig(remote: RawConfig | null, envModel?: string): AppCon
  */
 export function isModelProblem(message: string): boolean {
   if (/app\s?check|offline|failed to fetch|network/i.test(message)) return false
-  return /\b(404|429|503)\b|not found|not supported|unsupported model|billing|quota|resource.?exhausted|overloaded|unavailable|is not available|permission.*model|model.*permission/i.test(
+  return /\b(404|429|503|504)\b|not found|not supported|unsupported model|billing|quota|resource.?exhausted|overloaded|unavailable|is not available|permission.*model|model.*permission|timeout|timed out|took longer than|deadline/i.test(
     message,
   )
 }

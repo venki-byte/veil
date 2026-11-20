@@ -27,6 +27,15 @@ const DATE_PATTERNS: RegExp[] = [
 /** Words that mark the date after them as a date of birth. */
 const BIRTH_CUE = /(?:d\.?\s?o\.?\s?b\.?|date\s+of\s+birth|birth\s*date|birthday|born(?:\s+on)?)\W{0,12}$/i
 
+/**
+ * Whether the text just before `index`, on the same line, says that what
+ * follows is a date of birth ("DOB:", "Date of birth", "born on").
+ */
+export function hasBirthCueBefore(text: string, index: number): boolean {
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1
+  return BIRTH_CUE.test(text.slice(Math.max(lineStart, index - 40), index))
+}
+
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g
 
 /** Fixed-shape identifiers. Checked before the generic patterns. */
@@ -226,9 +235,7 @@ export function detectWithRegex(text: string): Span[] {
   // 2. Dates. Claimed early so their digits are not mistaken for phone numbers.
   for (const pattern of DATE_PATTERNS) {
     for (const match of text.matchAll(pattern)) {
-      const lineStart = text.lastIndexOf('\n', match.index) + 1
-      const before = text.slice(Math.max(lineStart, match.index - 40), match.index)
-      claim(match.index, match[0], BIRTH_CUE.test(before) ? 'DATE_OF_BIRTH' : 'DATE')
+      claim(match.index, match[0], hasBirthCueBefore(text, match.index) ? 'DATE_OF_BIRTH' : 'DATE')
     }
   }
 

@@ -136,13 +136,61 @@ narrow questions per chunk instead of one broad one: first every personal detail
 names of people and organisations. This follows the finding that small models do best on
 narrow jobs over short text.
 
-**Current results, both sets, one pass versus two:**
+**Second run, both sets, one pass versus two** (Chrome 158 on Windows, Gemini Nano,
+2026-11-20 UTC). The held-out set is the fair estimate:
 
-<!-- TODO before submitting: run the "Full document test" on #/routing (or the leak test on
-     #/eval) in Chrome with Gemini Nano ready, and paste both tables from its APPENDIX here,
-     with the Chrome version and the date. -->
+| Set | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes |
+| --- | ---: | ---: | ---: | ---: |
+| **Held-out (never tuned on)** | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
+| Development (tuned on) | 70 | 17 (24.3%) | 5 (7.1%) | 1 (1.4%) |
 
-_To be filled in from the next real run._
+The second, narrow pass cut the held-out leaks from 7 to 2, at a cost of about 3.4 more
+seconds per document (5.5 s to 8.9 s). The details still visible were a vehicle registration
+number and a flat number on the held-out set, and a house-name address on the development
+set. Per document:
+
+<details>
+<summary>Held-out set, per document</summary>
+
+| Document | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes | Time: 2 passes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Dental treatment estimate | 7 | 3 | 2 | 0 | 11.6 s |
+| School fee reminder | 7 | 1 | 0 | 0 | 13.3 s |
+| Electricity disconnection notice | 6 | 4 | 0 | 0 | 7.3 s |
+| Car insurance renewal notice | 6 | 4 | 1 | 1 | 5.1 s |
+| Credit card payment reminder | 4 | 3 | 1 | 0 | 5.5 s |
+| MRI report | 7 | 2 | 1 | 0 | 6.5 s |
+| Employment warning letter | 5 | 3 | 0 | 0 | 7.3 s |
+| Housing society dues notice | 6 | 3 | 2 | 1 | 7.1 s |
+| Summons in a civil suit | 4 | 4 | 0 | 0 | 7.7 s |
+| US hospital bill | 9 | 2 | 0 | 0 | 18.0 s |
+| **Total (10 documents)** | **61** | **29 (47.5%)** | **7 (11.5%)** | **2 (3.3%)** | **8.9 s per document** |
+
+</details>
+
+<details>
+<summary>Development set, per document</summary>
+
+| Document | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes | Time: 2 passes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Liver function test | 6 | 1 | 0 | 0 | 6.8 s |
+| Hospital discharge summary | 6 | 1 | 0 | 0 | 8.4 s |
+| Doctor's travel certificate | 6 | 2 | 1 | 0 | 21.3 s |
+| Rent agreement | 10 | 3 | 0 | 0 | 21.6 s |
+| Personal loan sanction letter | 9 | 1 | 1 | 0 | 340.3 s |
+| Bank KYC reminder | 6 | 3 | 1 | 1 | 12.7 s |
+| Income tax notice | 5 | 0 | 0 | 0 | 6.1 s |
+| Health insurance claim letter | 7 | 1 | 1 | 0 | 9.2 s |
+| Employment offer letter | 8 | 3 | 1 | 0 | 11.0 s |
+| Legal notice for a bounced cheque | 7 | 2 | 0 | 0 | 8.1 s |
+| **Total (10 documents)** | **70** | **17 (24.3%)** | **5 (7.1%)** | **1 (1.4%)** | **44.6 s per document** |
+
+</details>
+
+On the personal loan letter, one on-device call ran away and wrote until it hit the model's
+output limit, taking 338 seconds; that is what inflates the development-set average. The
+second pass still covered that document, so no detail leaked. Each on-device detection call
+now has a 45-second limit, so a runaway call is stopped and counted as a failure instead.
 
 Be careful how you read these numbers. The development-set figures are likely to be
 optimistic, because patterns were added after seeing which of those details were missed. The
@@ -254,10 +302,14 @@ Config, Hosting), pdf.js for local PDF text extraction, Vitest. There is no cust
 - `generateContentStream` for text answers, so they appear as they are written.
 - `response.inferenceSource` for the badge on every result and for the ledger, for both
   streamed and non-streamed answers.
-- **Remote Config** for the cloud model (`model_name`, default `gemini-4-hydrogen`) and the
-  number of on-device detection passes (`detection_passes`). Values are validated; if the
-  chosen cloud model is unavailable for the project, Veil retries once with
-  `gemini-3.5-flash-lite` and records which model answered.
+- **Remote Config** for the cloud model (`model_name`, default `gemini-3.5-flash-lite`) and
+  the number of on-device detection passes (`detection_passes`). Values are validated. If the
+  chosen cloud model is unavailable for the project, out of quota or too slow, Veil retries
+  once with `gemini-3.8-flash` and records which model answered.
+- **Time limits:** cloud requests use the SDK's per-request `timeout` (60 seconds instead of
+  the default 180), and every call has an overall limit, 45 seconds for an on-device
+  detection call. In testing, `gemini-4-hydrogen` gave fuller explanations but took about
+  150 seconds or timed out, so it is not the default.
 - App Check with the debug provider on localhost and reCAPTCHA Enterprise when hosted.
 
 ## Research this design draws on
@@ -333,7 +385,7 @@ In the Firebase console, open **Remote Config** and add either parameter, then p
 
 | Parameter | Values | Default |
 | --- | --- | --- |
-| `model_name` | A Gemini model name, such as `gemini-4-hydrogen` or `gemini-3.8-flash` | `gemini-4-hydrogen` |
+| `model_name` | A Gemini model name, such as `gemini-3.8-flash` or `gemini-4-hydrogen` | `gemini-3.5-flash-lite` |
 | `detection_passes` | `1` or `2` | `2` |
 
 Invalid values are ignored. For local testing, `VITE_CLOUD_MODEL` in `.env` overrides the
@@ -350,7 +402,7 @@ model.
 
 ## Tests
 
-Everything that does not need a model is plain code with unit tests (404 at the time of
+Everything that does not need a model is plain code with unit tests (414 at the time of
 writing):
 
 - `src/privacy`: overlapping spans, repeated values, the redact/rehydrate round trip, the

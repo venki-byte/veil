@@ -43,6 +43,23 @@ describe('spansFromNano', () => {
     expect(spansFromNano(money, [{ text: '32,000', type: 'OTHER' }, { text: '8%', type: 'OTHER' }])).toEqual([])
   })
 
+  it('keeps a date-of-birth label only when the text says it is a birth date', () => {
+    const lab = { start: 0, text: 'Date of Birth: 14/08/1973\nSample Collected: 09/11/2026 07:40' }
+    const spans = spansFromNano(lab, [
+      { text: '14/08/1973', type: 'DATE_OF_BIRTH' },
+      { text: '09/11/2026', type: 'DATE_OF_BIRTH' },
+    ])
+    expect(spans.map((span) => [span.text, span.type])).toEqual([
+      ['14/08/1973', 'DATE_OF_BIRTH'],
+      ['09/11/2026', 'DATE'],
+    ])
+  })
+
+  it('does not carry a birth cue from one line to the next', () => {
+    const text = { start: 0, text: 'DOB\n09/11/2026 is the report date' }
+    expect(spansFromNano(text, [{ text: '09/11/2026', type: 'DATE_OF_BIRTH' }])[0].type).toBe('DATE')
+  })
+
   it('falls back to OTHER for an unknown type', () => {
     const spans = spansFromNano(chunk, [{ text: 'Deshpande', type: 'DOCTOR' }])
     expect(spans[0].type).toBe('OTHER')

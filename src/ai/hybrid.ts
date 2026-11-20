@@ -38,6 +38,7 @@ import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import { createDeviceStore } from './deviceStatus'
 import { accumulate } from './stream'
+import { withTimeout } from './timeout'
 import {
   classifyPrompt,
   definePrompt,
@@ -338,6 +339,18 @@ interface Request {
   outputLanguage?: string
   /** If given, the answer is streamed and this is called with the text so far. */
   onText?: (soFar: string) => void
+  /** Overrides the default time limit for this call, in milliseconds. */
+  timeoutMs?: number
+}
+
+/** The cloud SDK's own limit per request. Its default is 180 seconds. */
+const CLOUD_TIMEOUT_MS = 60_000
+/** One on-device detection call. Normal calls take 2 to 15 seconds. */
+const DETECTION_TIMEOUT_MS = 45_000
+
+/** Overall time limit for a call, unless the request sets its own. */
+function defaultTimeout(mode: Mode): number {
+  return mode === InferenceMode.ONLY_IN_CLOUD ? CLOUD_TIMEOUT_MS + 15_000 : 120_000
 }
 
 const models = new Map<string, GenerativeModel>()
@@ -368,10 +381,18 @@ function modelFor(mode: Mode, request: Request, cloudModel: string): GenerativeM
   return model
 }
 
-async function generate(
+function generate(
   mode: Mode,
   request: Request,
   cloudModel: string = getConfig().modelName,
+): Promise<{ text: string; source: InferenceSourceName }> {
+  return withTimeout(generateOnce(mode, request, cloudModel), request.timeoutMs ?? defaultTimeout(mode))
+}
+
+async function generateOnce(
+  mode: Mode,
+  request: Request,
+  cloudModel: string,
 ): Promise<{ text: string; source: InferenceSourceName }> {
   const parts: Array<string | Part> = request.image
     ? [
@@ -383,7 +404,7 @@ async function generate(
   const model = modelFor(mode, request, cloudModel)
   let response: EnhancedGenerateContentResponse
   if (request.onText) {
-    const streamed = await model.generateContentStream(parts)
+    const streamed = await model.generateContentStream(parts, { timeout: CLOUD_TIMEOUT_MS })
     let soFar = ''
     for await (const chunk of streamed.stream) {
       let piece = ''
@@ -397,7 +418,7 @@ async function generate(
     }
     response = await streamed.response
   } else {
-    response = (await model.generateContent(parts)).response
+    response = (await model.generateContent(parts, { timeout: CLOUD_TIMEOUT_MS })).response
   }
   const text = response.text()
   if (!text.trim()) throw new Error('The model returned an empty answer. Please try again.')
@@ -619,6 +640,7 @@ export async function detectSensitive(chunk: string): Promise<NanoFinding[]> {
   const result = await run(ROUTES.detect, {
     prompt: detectPrompt(chunk),
     schema: { id: 'detection', value: detectionSchema },
+    timeoutMs: DETECTION_TIMEOUT_MS,
   })
   return parseDetection(result.value)
 }
@@ -631,6 +653,7 @@ export async function detectNames(chunk: string): Promise<NanoFinding[]> {
   const result = await run(ROUTES.detectNames, {
     prompt: detectNamesPrompt(chunk),
     schema: { id: 'names', value: namesSchema },
+    timeoutMs: DETECTION_TIMEOUT_MS,
   })
   return parseDetection(result.value)
 }

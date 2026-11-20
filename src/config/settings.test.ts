@@ -14,8 +14,13 @@ describe('isValidModelName', () => {
 describe('parseConfig', () => {
   it('uses the defaults when there is no remote config', () => {
     expect(parseConfig(null)).toEqual(DEFAULT_CONFIG)
-    expect(DEFAULT_CONFIG.modelName).toBe('gemini-4-hydrogen')
+    expect(DEFAULT_CONFIG.modelName).toBe('gemini-3.5-flash-lite')
+    expect(DEFAULT_CONFIG.fallbackModel).toBe('gemini-3.8-flash')
     expect(DEFAULT_CONFIG.detectionPasses).toBe(2)
+  })
+
+  it('can switch to gemini-4-hydrogen from Remote Config', () => {
+    expect(parseConfig({ modelName: 'gemini-4-hydrogen' })).toMatchObject({ modelName: 'gemini-4-hydrogen', source: 'remote config' })
   })
 
   it('takes valid values from Remote Config and says so', () => {
@@ -28,7 +33,7 @@ describe('parseConfig', () => {
   })
 
   it('reports "defaults" when Remote Config only repeats the defaults', () => {
-    expect(parseConfig({ modelName: 'gemini-4-hydrogen', detectionPasses: '2' }).source).toBe('defaults')
+    expect(parseConfig({ modelName: 'gemini-3.5-flash-lite', detectionPasses: '2' }).source).toBe('defaults')
   })
 
   it('ignores invalid remote values instead of breaking', () => {
@@ -37,18 +42,18 @@ describe('parseConfig', () => {
   })
 
   it('lets a model set in .env win, for local testing', () => {
-    const config = parseConfig({ modelName: 'gemini-3.8-flash' }, 'gemini-3.5-flash-lite')
-    expect(config.modelName).toBe('gemini-3.5-flash-lite')
+    const config = parseConfig({ modelName: 'gemini-3.8-flash' }, 'gemini-4-hydrogen')
+    expect(config.modelName).toBe('gemini-4-hydrogen')
     expect(config.source).toBe('.env')
   })
 
   it('ignores an empty or invalid .env model', () => {
-    expect(parseConfig(null, '').modelName).toBe('gemini-4-hydrogen')
+    expect(parseConfig(null, '').modelName).toBe('gemini-3.5-flash-lite')
     expect(parseConfig(null, 'gpt-5').source).toBe('defaults')
   })
 
   it('always keeps the fallback model', () => {
-    expect(parseConfig({ modelName: 'gemini-3.8-flash' }).fallbackModel).toBe('gemini-3.5-flash-lite')
+    expect(parseConfig({ modelName: 'gemini-4-hydrogen' }).fallbackModel).toBe('gemini-3.8-flash')
   })
 })
 
@@ -59,6 +64,9 @@ describe('isModelProblem', () => {
     'This model requires billing to be enabled.',
     '[503 Service Unavailable] The model is overloaded. Please try again later.',
     'The model gemini-4-hydrogen is not supported for generateContent.',
+    'Timeout has expired.',
+    'The model took longer than 60 seconds and was stopped.',
+    '[504 Gateway Timeout] Deadline exceeded.',
     'The cloud model is rate-limited right now. Wait a minute and try again.'.replace('rate-limited', 'quota exceeded'),
   ])('treats %j as a model problem', (message) => {
     expect(isModelProblem(message)).toBe(true)

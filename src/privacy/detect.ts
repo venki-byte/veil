@@ -8,7 +8,7 @@
  */
 
 import { chunkText, DEFAULT_CHUNK_CHARS, type Chunk } from './chunk'
-import { detectWithRegex } from './regex'
+import { detectWithRegex, hasBirthCueBefore } from './regex'
 import { locateAll, mergeSpans } from './spans'
 import { isSensitiveType, type SensitiveType, type Span } from './types'
 
@@ -96,11 +96,16 @@ export function spansFromNano(chunk: Chunk, findings: NanoFinding[]): Span[] {
     const type: SensitiveType = isSensitiveType(rawType) && rawType !== 'DATE' ? rawType : 'OTHER'
 
     for (const hit of locateAll(chunk.text, text)) {
+      // A small model sometimes calls any date a date of birth, which hides
+      // deadlines the explanation needs and mislabels them for the cloud.
+      // Keep the label only when the text itself says it is a birth date;
+      // otherwise treat it as an ordinary date (visible, and can be hidden).
+      const hitType = type === 'DATE_OF_BIRTH' && !hasBirthCueBefore(chunk.text, hit.start) ? 'DATE' : type
       spans.push({
         start: chunk.start + hit.start,
         end: chunk.start + hit.end,
         text: hit.text,
-        type,
+        type: hitType,
         source: 'nano',
       })
     }
