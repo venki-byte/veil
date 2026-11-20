@@ -95,6 +95,11 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
       })
     } else if (firebaseConfigured) {
       const lab = SAMPLES.find((sample) => sample.id === 'lab-report')!
+      // Stream three of the calls exactly as the app does, and count the pieces.
+      const pieces = { followUp: 0, simplify: 0, quickRead: 0 }
+      const count = (task: keyof typeof pieces) => () => {
+        pieces[task] += 1
+      }
       const result = await runEndToEnd({
         sampleText: lab.text,
         mustBeHidden: ['Meenakshi', 'Raghavan', 'Deshpande', 'Subramaniam', 'Lake View Road'],
@@ -104,11 +109,12 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
 
         detectPasses: detectionPasses(),
         explain: (redacted, registry) => explainDocument(redacted, registry),
-        followUp: (redacted, question, registry) => answerFollowUp(redacted, [], question, registry),
-        simplify,
+        followUp: (redacted, question, registry) => answerFollowUp(redacted, [], question, registry, count('followUp')),
+        simplify: (text, registry) => simplify(text, registry, count('simplify')),
         define: defineTerm,
         translate: (text, registry) => translate(text, 'hi', registry),
-        quickRead,
+        quickRead: (redacted, registry) => quickRead(redacted, registry, count('quickRead')),
+        streamedPieces: (task) => pieces[task],
 
         classify: async (excerpt) => (await classifyDocument(excerpt)).value,
         plan: async (type, registry) => (await planStrictQuestions(type, registry)).value,

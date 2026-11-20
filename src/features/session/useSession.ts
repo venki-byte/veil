@@ -104,6 +104,8 @@ export function useSession() {
   const [error, setError] = useState<string | null>(null)
   const [leaks, setLeaks] = useState<Leak[] | null>(null)
   const [busy, setBusy] = useState<string[]>([])
+  /** Text streamed so far for each running task, keyed like `busy`. Placeholders are still in it. */
+  const [streams, setStreams] = useState<Record<string, string>>({})
 
   const [explanation, setExplanation] = useState<AiResult<Explanation> | null>(null)
   const [quick, setQuick] = useState<TextResult | null>(null)
@@ -122,7 +124,11 @@ export function useSession() {
   const nextFollowUpId = useRef(1)
 
   const start = (key: string) => setBusy((current) => [...current, key])
-  const finish = (key: string) => setBusy((current) => current.filter((item) => item !== key))
+  const finish = (key: string) => {
+    setBusy((current) => current.filter((item) => item !== key))
+    setStreams((current) => Object.fromEntries(Object.entries(current).filter(([name]) => name !== key)))
+  }
+  const streamTo = (key: string) => (soFar: string) => setStreams((current) => ({ ...current, [key]: soFar }))
 
   const clearResults = useCallback(() => {
     setExplanation(null)
@@ -137,6 +143,7 @@ export function useSession() {
     setLeaks(null)
     setError(null)
     setBusy([])
+    setStreams({})
   }, [])
 
   const releaseImage = () => {
@@ -407,7 +414,7 @@ export function useSession() {
     setLeaks(null)
     start('quick')
     try {
-      const result = await quickRead(registry.redact(doc.text), registry)
+      const result = await quickRead(registry.redact(doc.text), registry, streamTo('quick'))
       if (run !== runId.current) return
       setQuick(toTextResult(result))
       setStage('result')
@@ -424,12 +431,12 @@ export function useSession() {
   const answerText = explanation ? explanationAsText(explanation.value) : (quick?.text ?? '')
 
   const runTool = useCallback(
-    async (key: string, task: () => Promise<AiResult<string>>, store: (result: TextResult) => void) => {
+    async (key: string, task: (onText: (soFar: string) => void) => Promise<AiResult<string>>, store: (result: TextResult) => void) => {
       const run = runId.current
       setToolError(null)
       start(key)
       try {
-        const result = await task()
+        const result = await task(streamTo(key))
         if (run === runId.current) store(toTextResult(result))
       } catch (caught) {
         if (run === runId.current) setToolError(describeError(caught))
@@ -441,7 +448,7 @@ export function useSession() {
   )
 
   const runSimplify = useCallback(
-    () => runTool('simplify', () => simplify(answerText, registry), setSimple),
+    () => runTool('simplify', (onText) => simplify(answerText, registry, onText), setSimple),
     [answerText, registry, runTool],
   )
 
@@ -449,7 +456,7 @@ export function useSession() {
     (language: LanguageCode) =>
       runTool(
         `translate:${language}`,
-        () => translate(simple?.text ?? answerText, language, registry),
+        (onText) => translate(simple?.text ?? answerText, language, registry, onText),
         (result) => setTranslations((current) => ({ ...current, [language]: result })),
       ),
     [answerText, registry, runTool, simple],
@@ -463,7 +470,7 @@ export function useSession() {
       const context = [known ? `${known.term}: ${known.meaning}` : '', answerText].filter(Boolean).join('\n')
       return runTool(
         `define:${cleanTerm}`,
-        () => defineTerm(cleanTerm, context, registry),
+        (onText) => defineTerm(cleanTerm, context, registry, onText),
         (result) => setTerms((current) => ({ ...current, [cleanTerm]: result })),
       )
     },
@@ -498,8 +505,8 @@ export function useSession() {
         // After strict mode the document must still never leave, so the
         // follow-up is answered by Gemini Nano on this device.
         const result = strictTrail
-          ? await answerFollowUpOnDevice(registry.redact(doc.text), history, redactedQuestion)
-          : await answerFollowUp(registry.redact(doc.text), history, redactedQuestion, registry)
+          ? await answerFollowUpOnDevice(registry.redact(doc.text), history, redactedQuestion, streamTo('ask'))
+          : await answerFollowUp(registry.redact(doc.text), history, redactedQuestion, registry, streamTo('ask'))
         if (run !== runId.current) return
         setFollowUps((current) =>
           current.map((item) => (item.id === id ? { ...item, status: 'done', answer: toTextResult(result) } : item)),
@@ -528,6 +535,7 @@ export function useSession() {
     leaks,
     error,
     busy,
+    streams,
     explanation,
     quick,
     strictStep,

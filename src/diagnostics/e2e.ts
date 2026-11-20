@@ -54,6 +54,9 @@ export interface E2EDeps {
   /** Text sent to the cloud since `mark`. */
   outboundSince: (mark: number) => string[]
 
+  /** How many streamed pieces a task's answer arrived in, if it was streamed. */
+  streamedPieces?: (task: 'followUp' | 'simplify' | 'quickRead') => number
+
   describeError: (error: unknown) => string
   now?: () => number
   onProgress?: (done: number, total: number, title: string) => void
@@ -110,6 +113,9 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
       record({ title, expected, status: 'error', detail: deps.describeError(error), ms: now() - started })
     }
   }
+
+  const streamNote = (task: 'followUp' | 'simplify' | 'quickRead') =>
+    deps.streamedPieces ? `, streamed in ${deps.streamedPieces(task)} piece(s)` : ''
 
   const skipped = (title: string, expected: string, why: string) =>
     record({ title, expected, status: 'fail', detail: `skipped: ${why}`, ms: 0 })
@@ -180,7 +186,7 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
       const answer = registry.rehydrate(result.value)
       return {
         status: result.source === 'in_cloud' && answer.includes(deps.followUpExpect) ? 'pass' : 'fail',
-        detail: `ran ${result.source.toUpperCase()}; answer: "${preview(answer, 160)}"`,
+        detail: `ran ${result.source.toUpperCase()}${streamNote('followUp')}; answer: "${preview(answer, 160)}"`,
         ms: result.durationMs,
       }
     })
@@ -195,7 +201,7 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
       const result = await deps.simplify(answerText, registry)
       return {
         status: result.source === 'on_device' && result.value.trim().length > 20 ? 'pass' : 'fail',
-        detail: `ran ${result.source.toUpperCase()}; "${preview(registry.rehydrate(result.value), 120)}"`,
+        detail: `ran ${result.source.toUpperCase()}${streamNote('simplify')}; "${preview(registry.rehydrate(result.value), 120)}"`,
         ms: result.durationMs,
       }
     })
@@ -231,7 +237,7 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
       const result = await deps.quickRead(redacted, registry)
       return {
         status: result.source === 'on_device' && result.value.trim().length > 20 ? 'pass' : 'fail',
-        detail: `ran ${result.source.toUpperCase()}; "${preview(registry.rehydrate(result.value), 140)}"`,
+        detail: `ran ${result.source.toUpperCase()}${streamNote('quickRead')}; "${preview(registry.rehydrate(result.value), 140)}"`,
         ms: result.durationMs,
       }
     })

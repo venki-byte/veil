@@ -24,6 +24,7 @@ import {
   InferenceMode,
   InferenceSource,
   type AI,
+  type EnhancedGenerateContentResponse,
   type GenerativeModel,
   type Part,
   type SchemaRequest,
@@ -36,6 +37,7 @@ import type { NanoDetector, NanoFinding } from '../privacy/detect'
 import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import { createDeviceStore } from './deviceStatus'
+import { accumulate } from './stream'
 import {
   classifyPrompt,
   definePrompt,
@@ -94,6 +96,8 @@ export interface Route {
   mode: Mode
   /** The reason this task uses this mode. Shown in the UI and the README. */
   why: string
+  /** Housekeeping calls that are not a user-facing task, left out of the routing table. */
+  internal?: boolean
 }
 
 /**
@@ -172,6 +176,12 @@ export const ROUTES = {
     label: 'Strict: follow-up question',
     mode: InferenceMode.ONLY_ON_DEVICE,
     why: 'After strict mode, follow-up questions are answered on-device, so the document still never leaves.',
+  },
+  warmUp: {
+    label: 'Warm up Gemini Nano',
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    why: 'Loads the on-device model into memory once it is ready, so the first real step is fast. Uses a fixed sentence, never a document.',
+    internal: true,
   },
 } as const satisfies Record<string, Route>
 
@@ -326,6 +336,8 @@ interface Request {
   image?: ImageInput
   schema?: { id: string; value: object }
   outputLanguage?: string
+  /** If given, the answer is streamed and this is called with the text so far. */
+  onText?: (soFar: string) => void
 }
 
 const models = new Map<string, GenerativeModel>()
@@ -368,11 +380,29 @@ async function generate(
       ]
     : [request.prompt]
 
-  const result = await modelFor(mode, request, cloudModel).generateContent(parts)
-  const text = result.response.text()
+  const model = modelFor(mode, request, cloudModel)
+  let response: EnhancedGenerateContentResponse
+  if (request.onText) {
+    const streamed = await model.generateContentStream(parts)
+    let soFar = ''
+    for await (const chunk of streamed.stream) {
+      let piece = ''
+      try {
+        piece = chunk.text()
+      } catch {
+        piece = ''
+      }
+      soFar = accumulate(soFar, piece)
+      if (soFar) request.onText(soFar)
+    }
+    response = await streamed.response
+  } else {
+    response = (await model.generateContent(parts)).response
+  }
+  const text = response.text()
   if (!text.trim()) throw new Error('The model returned an empty answer. Please try again.')
 
-  const reported = result.response.inferenceSource
+  const reported = response.inferenceSource
   const source: InferenceSourceName =
     reported === InferenceSource.ON_DEVICE
       ? 'on_device'
@@ -624,29 +654,41 @@ export async function explainDocument(redactedDocument: string, registry: Regist
 }
 
 /** PREFER_ON_DEVICE. A short summary that also works offline. */
-export function quickRead(redactedDocument: string, registry: Registry): Promise<AiResult<string>> {
+export function quickRead(redactedDocument: string, registry: Registry, onText?: (soFar: string) => void): Promise<AiResult<string>> {
   return run(ROUTES.quickRead, {
     prompt: quickReadPrompt(redactedDocument.slice(0, QUICK_READ_MAX_CHARS)),
     registry,
+    onText,
   })
 }
 
 /** PREFER_ON_DEVICE. Rewrites redacted text in simpler words. */
-export function simplify(text: string, registry: Registry): Promise<AiResult<string>> {
-  return run(ROUTES.simplify, { prompt: simplifyPrompt(text), registry })
+export function simplify(text: string, registry: Registry, onText?: (soFar: string) => void): Promise<AiResult<string>> {
+  return run(ROUTES.simplify, { prompt: simplifyPrompt(text), registry, onText })
 }
 
 /** PREFER_ON_DEVICE. Defines one term using redacted context. */
-export function defineTerm(term: string, context: string, registry: Registry): Promise<AiResult<string>> {
-  return run(ROUTES.define, { prompt: definePrompt(term, context), registry })
+export function defineTerm(
+  term: string,
+  context: string,
+  registry: Registry,
+  onText?: (soFar: string) => void,
+): Promise<AiResult<string>> {
+  return run(ROUTES.define, { prompt: definePrompt(term, context), registry, onText })
 }
 
 /** PREFER_ON_DEVICE. Translates redacted text; placeholders are kept. */
-export function translate(text: string, language: LanguageCode, registry: Registry): Promise<AiResult<string>> {
+export function translate(
+  text: string,
+  language: LanguageCode,
+  registry: Registry,
+  onText?: (soFar: string) => void,
+): Promise<AiResult<string>> {
   return run(ROUTES.translate, {
     prompt: translatePrompt(text, LANGUAGES[language].name),
     registry,
     outputLanguage: language,
+    onText,
   })
 }
 
@@ -656,10 +698,12 @@ export function answerFollowUp(
   history: FollowUpTurn[],
   redactedQuestion: string,
   registry: Registry,
+  onText?: (soFar: string) => void,
 ): Promise<AiResult<string>> {
   return run(ROUTES.followUp, {
     prompt: followUpPrompt(redactedDocument, history, redactedQuestion),
     registry,
+    onText,
   })
 }
 
@@ -719,11 +763,37 @@ export function answerFollowUpOnDevice(
   redactedDocument: string,
   history: FollowUpTurn[],
   redactedQuestion: string,
+  onText?: (soFar: string) => void,
 ): Promise<AiResult<string>> {
   return run(ROUTES.followUpOnDevice, {
     prompt: followUpPrompt(redactedDocument.slice(0, QUICK_READ_MAX_CHARS), history, redactedQuestion),
+    onText,
   })
 }
+
+/* -------------------------------------------------------------------------- */
+/* Warm-up                                                                    */
+/* -------------------------------------------------------------------------- */
+
+let warmedUp = false
+
+/**
+ * The first on-device call loads the model into memory, which can take
+ * twenty seconds or more. Once Gemini Nano is ready, one tiny call with a
+ * fixed sentence loads it in the background, so the first real step is fast.
+ * It is listed in the privacy ledger like every other call.
+ */
+function warmUp(): void {
+  if (warmedUp || !firebaseConfigured) return
+  warmedUp = true
+  void run(ROUTES.warmUp, { prompt: 'Reply with the single word: ready.' }).catch(() => {
+    warmedUp = false
+  })
+}
+
+deviceStore.subscribe(() => {
+  if (deviceStore.getState().status === 'ready') warmUp()
+})
 
 /* -------------------------------------------------------------------------- */
 /* Routing check (diagnostics page)                                           */

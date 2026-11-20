@@ -5,6 +5,7 @@ import { SourceBadge } from '../../components/SourceBadge'
 import type { Session } from '../session/useSession'
 import { StrictProgress, StrictTrailPanel } from '../strict/StrictPanels'
 import { Rehydrated } from './Rehydrated'
+import { StreamingText } from './StreamingText'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -93,6 +94,13 @@ export function ExplanationColumn({ session, online, tools, followUp }: Explanat
           <StrictProgress step={session.strictStep} />
         ) : explaining ? (
           <Loading label="Cloud Gemini is reading the redacted text" />
+        ) : quickReading && session.streams.quick ? (
+          <div className="px-5 py-5">
+            <h2 className="font-serif text-2xl text-device-900">Quick read</h2>
+            <div className="mt-3">
+              <StreamingText text={session.streams.quick} registry={session.registry} />
+            </div>
+          </div>
         ) : quickReading ? (
           <Loading label="Gemini Nano is writing a quick read on this device" />
         ) : (

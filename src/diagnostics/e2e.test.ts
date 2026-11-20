@@ -221,6 +221,21 @@ describe('runEndToEnd: failures are caught and reported', () => {
   })
 })
 
+describe('runEndToEnd: streaming', () => {
+  it('reports how many pieces streamed answers arrived in', async () => {
+    const counts = { followUp: 7, simplify: 12, quickRead: 1 }
+    const { outcomes } = await runEndToEnd(build({ streamedPieces: (task) => counts[task] }).deps)
+    expect(outcomes[3].detail).toContain('streamed in 7 piece(s)')
+    expect(outcomes[4].detail).toContain('streamed in 12 piece(s)')
+    expect(outcomes[7].detail).toContain('streamed in 1 piece(s)')
+  })
+
+  it('says nothing about streaming when the calls were not streamed', async () => {
+    const { outcomes } = await runEndToEnd(build().deps)
+    expect(outcomes.map((outcome) => outcome.detail).join(' ')).not.toContain('streamed')
+  })
+})
+
 describe('runEndToEnd: the privacy audit', () => {
   it('passes only when no hidden value was in any cloud request, and counts them', async () => {
     const { outcomes } = await runEndToEnd(build().deps)

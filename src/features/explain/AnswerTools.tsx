@@ -6,6 +6,7 @@ import { ModeChip } from '../../components/RoutingTable'
 import { SourceBadge } from '../../components/SourceBadge'
 import type { Session, TextResult } from '../session/useSession'
 import { Rehydrated } from './Rehydrated'
+import { StreamingText } from './StreamingText'
 
 function ResultCard({
   title,
@@ -114,12 +115,24 @@ export function AnswerTools({ session }: { session: Session }) {
       )}
 
       <div className="mt-3 flex flex-col gap-2" aria-live="polite">
-        {pendingTerm && (
+        {pendingTerm && !session.streams[pendingTerm] && (
           <p className="flex items-center gap-2 text-xs font-medium text-device-700" role="status">
             <span className="h-2 w-2 animate-pulse rounded-full bg-device-600" aria-hidden="true" />
             Explaining “{session.registry.rehydrate(pendingTerm.slice('define:'.length))}”
           </p>
         )}
+        {busy
+          .filter((key) => session.streams[key] && (key === 'simplify' || key.startsWith('translate:') || key.startsWith('define:')))
+          .map((key) => {
+            const code = key.startsWith('translate:') ? (key.slice('translate:'.length) as LanguageCode) : null
+            const title =
+              key === 'simplify'
+                ? 'In simpler words'
+                : code
+                  ? `${LANGUAGES[code].native} (${LANGUAGES[code].name})`
+                  : `“${session.registry.rehydrate(key.slice('define:'.length))}”`
+            return <StreamingText key={key} title={title} text={session.streams[key]} registry={session.registry} lang={code ?? undefined} />
+          })}
         {session.toolError && (
           <p role="alert" className="flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-800">
             <Icon name="alert" size={14} className="mt-0.5 shrink-0" /> {session.toolError}

@@ -35,7 +35,7 @@ export function ModeChip({ mode }: { mode: Mode }) {
 
 /** The four inference modes, the tasks that use each, and the reason. */
 export function RoutingTable() {
-  const routes: Route[] = Object.values(ROUTES)
+  const routes: Route[] = Object.values(ROUTES).filter((route: Route) => !route.internal)
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-white">
       <table className="w-full text-left text-sm">

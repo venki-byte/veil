@@ -46,11 +46,17 @@ export function FollowUpBox({ session, online }: { session: Session; online: boo
                 </p>
               )}
               <div className="mr-6 mt-1.5 rounded-xl rounded-bl-sm border border-line bg-white px-3.5 py-2.5">
-                {item.status === 'pending' && (
-                  <p className="flex items-center gap-2 text-sm text-muted" role="status">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-cloud-600" aria-hidden="true" /> Thinking
-                  </p>
-                )}
+                {item.status === 'pending' &&
+                  (session.streams.ask ? (
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-stone-800" aria-live="polite" aria-busy="true">
+                      <Rehydrated text={session.streams.ask} registry={session.registry} />
+                      <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-stone-400" aria-hidden="true" />
+                    </p>
+                  ) : (
+                    <p className="flex items-center gap-2 text-sm text-muted" role="status">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-cloud-600" aria-hidden="true" /> Thinking
+                    </p>
+                  ))}
                 {item.status === 'error' && (
                   <p className="flex items-start gap-2 text-sm leading-relaxed text-rose-800">
                     <Icon name="alert" className="mt-0.5 shrink-0" /> {item.error}
