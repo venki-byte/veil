@@ -48,7 +48,7 @@ Firebase AI Logic inference modes are used, each for a stated reason:
 
 | Mode | Used for | Why |
 | --- | --- | --- |
-| `ONLY_ON_DEVICE` | Transcribe a photo; detect personal details; strict mode's local steps | Raw data must never leave. If Gemini Nano is missing, Veil fails visibly rather than leak. |
+| `ONLY_ON_DEVICE` | Transcribe a photo; detect personal details (two narrow passes); strict mode's local steps | Raw data must never leave. If Gemini Nano is missing, Veil fails visibly rather than leak. |
 | `ONLY_IN_CLOUD` | Full explanation of the redacted text; strict mode's two cloud steps | Needs strong reasoning and long context. The input is already redacted and has passed the leak guard. |
 | `PREFER_ON_DEVICE` | Quick read, simpler words, explain a term, translate | The input is already redacted, so either path is safe; local is free and instant. |
 | `PREFER_IN_CLOUD` | Follow-up questions | Best quality when online; still answers from the device when offline. |
@@ -91,11 +91,16 @@ information, so it can be thinner than the standard one.
 
 ## Measured, not claimed
 
-The **leak test** (`#/eval`) runs ten synthetic documents containing 70 planted personal
-details through two detectors: pattern matching alone, and pattern matching plus Gemini
-Nano. Scoring is plain code and is done by position: a planted detail counts as hidden only
-if every letter and digit of every occurrence would be replaced by a placeholder. If any
-part would still be visible to the cloud, it counts as leaked.
+The **leak test** (`#/eval`) runs synthetic documents with planted personal details through
+pattern matching alone and through pattern matching plus Gemini Nano. Scoring is plain code
+and is done by position: a planted detail counts as hidden only if every letter and digit of
+every occurrence would be replaced by a placeholder. If any part would still be visible to
+the cloud, it counts as leaked.
+
+There are two sets of ten documents. The **development set** was used to improve detection.
+The **held-out set** was written afterwards and is never used to tune anything, so its number
+is the honest one. With Gemini Nano, each run scores one on-device pass and two passes from
+the same calls, so the effect of the second pass is measured, not assumed.
 
 **First run** (Chrome 158 on Windows, Gemini Nano, 2026-11-20). 70 planted details in ten
 documents; 8.1 seconds per document with Gemini Nano:
@@ -123,19 +128,29 @@ showed that an unlabelled street address was not hidden, and that the cloud some
 example placeholder (`[ORG_1]`) from the prompt into its answer. Both were fixed afterwards:
 a pattern for addresses that end in a PIN code, a pattern for company names with a legal
 suffix ("... Private Limited"), and prompts that list only the placeholders actually present
-in the text. With those patterns, **pattern matching alone** now leaks 17 of 70 (24.3%); this
-number is deterministic and is checked by the unit tests. The regex + Gemini Nano column has
-not been re-run since those changes.
+in the text. With those patterns, **pattern matching alone** now leaks 17 of 70 (24.3%) on the
+development set; this number is deterministic and is checked by the unit tests.
 
-<!-- TODO before submitting: re-run the "Full document test" on #/routing, or the leak test
-     on #/eval, in Chrome with Gemini Nano ready, and add the new regex + Nano numbers here. -->
+Because names written inside sentences were Gemini Nano's main miss, detection now asks it two
+narrow questions per chunk instead of one broad one: first every personal detail, then only the
+names of people and organisations. This follows the finding that small models do best on
+narrow jobs over short text.
 
-Be careful how you read these numbers: the ten documents were written before the run, but the
-patterns above were added after seeing which details were missed, so the second set of
-figures is likely to be optimistic for documents that are not like these. The test documents and their planted details are in
-[`src/features/eval/corpus.ts`](src/features/eval/corpus.ts). Every person, organisation,
-address and number in them is invented. Ten documents is a small sample: treat the result
-as an indication, not a guarantee.
+**Current results, both sets, one pass versus two:**
+
+<!-- TODO before submitting: run the "Full document test" on #/routing (or the leak test on
+     #/eval) in Chrome with Gemini Nano ready, and paste both tables from its APPENDIX here,
+     with the Chrome version and the date. -->
+
+_To be filled in from the next real run._
+
+Be careful how you read these numbers. The development-set figures are likely to be
+optimistic, because patterns were added after seeing which of those details were missed. The
+held-out figures are the fairer estimate. The documents and their planted details are in
+[`src/features/eval/corpus.ts`](src/features/eval/corpus.ts) and
+[`src/features/eval/heldout.ts`](src/features/eval/heldout.ts). Every person, organisation,
+address and number in them is invented. Twenty documents is a small sample: treat the
+results as an indication, not a guarantee.
 
 ## What makes it trustworthy
 
@@ -168,8 +183,12 @@ as an indication, not a guarantee.
 - Structured explanation: summary, things to watch, deadlines and amounts, key terms,
   questions to ask.
 - Follow-up questions, with the question itself redacted through the same registry.
-- Simpler words, explain a term, and translation of the answer into Hindi or Tamil.
+- Simpler words, explain a term, and translation of the answer into eight Indian languages
+  (Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, Malayalam, Gujarati).
+- Answers stream in as they are written, with real names restored as they arrive.
 - Strict mode.
+- A one-click diagnostic report (`#/routing`) that runs a whole sample document through every
+  step and copies a plain-text report with no document text, keys or tokens in it.
 - Offline: the app shell loads from a service worker, and Gemini Nano can still produce a
   quick read. The full explanation is offered when the connection returns.
 - Three one-click sample documents (`#/sample/lab-report`, `#/sample/rental-agreement`,
@@ -185,13 +204,18 @@ src/
     deviceStatus.ts   Model status (unavailable / needs setup / downloading / ready),
                       derived from the SDK's initializeDeviceModel(). Plain code.
     strict.ts         Strict mode flow with the model calls injected. Plain code.
+    stream.ts         Joins streamed text pieces. Plain code.
     prompts.ts        Every prompt, in one place.
     schemas.ts        JSON Schemas for structured output, and tolerant parsers.
+  config/
+    settings.ts       Validated settings with safe defaults. Plain code.
+    remote.ts         Loads them from Firebase Remote Config.
+  diagnostics/        The one-click report: checks, scoring and the report text. Plain code.
   privacy/            Deterministic code. No model calls.
     regex.ts          Emails, phones, IDs, accounts, dates, labelled and titled names.
     chunk.ts          Splits text into short chunks, far below the on-device token limit.
     spans.ts          Locating values and resolving overlapping findings.
-    detect.ts         Pipeline: regex, then Gemini Nano per chunk, then merge.
+    detect.ts         Pipeline: regex, then one or two Gemini Nano passes per chunk, then merge.
     registry.ts       Typed placeholders: redact and rehydrate.
     leakGuard.ts      Last check before anything leaves the device.
   ledger/             Privacy ledger store and drawer.
@@ -201,7 +225,7 @@ src/
     explain/          Explanation column, light tools, local rehydration.
     followup/         Follow-up questions.
     strict/           Strict mode progress and "what the cloud saw" panels.
-    eval/             Leak test page, corpus and scoring.
+    eval/             Leak test page, the development and held-out sets, and scoring.
     routing/          Routing check page.
     session/          State of one document session.
     workspace/        The three-column layout.
@@ -213,8 +237,8 @@ Pipeline: **ingest** (local) → **detect** (regex + Gemini Nano, local) → **r
 → **review** (you) → **leak guard** (code) → **explain** (cloud, redacted only) →
 **rehydrate** (code) → **follow-up** (redacted with the same registry).
 
-Stack: Vite, React, TypeScript, Tailwind CSS, Firebase JS SDK (AI Logic, App Check,
-Hosting), pdf.js for local PDF text extraction, Vitest. There is no custom backend.
+Stack: Vite, React, TypeScript, Tailwind CSS, Firebase JS SDK (AI Logic, App Check, Remote
+Config, Hosting), pdf.js for local PDF text extraction, Vitest. There is no custom backend.
 
 ### How Firebase AI Logic is used
 
@@ -225,8 +249,15 @@ Hosting), pdf.js for local PDF text extraction, Vitest. There is no custom backe
   (`responseMimeType`, `responseSchema`) in the cloud, and
   `onDeviceParams.promptOptions.responseConstraint` on-device.
 - `model.initializeDeviceModel(onProgress)` for the model download, started from a button
-  click, with a progress bar.
-- `result.response.inferenceSource` for the badge on every result and for the ledger.
+  click, with a progress bar. Once the model is ready, one tiny call with a fixed sentence
+  loads it into memory, so the first real step is fast.
+- `generateContentStream` for text answers, so they appear as they are written.
+- `response.inferenceSource` for the badge on every result and for the ledger, for both
+  streamed and non-streamed answers.
+- **Remote Config** for the cloud model (`model_name`, default `gemini-4-hydrogen`) and the
+  number of on-device detection passes (`detection_passes`). Values are validated; if the
+  chosen cloud model is unavailable for the project, Veil retries once with
+  `gemini-3.5-flash-lite` and records which model answered.
 - App Check with the debug provider on localhost and reCAPTCHA Enterprise when hosted.
 
 ## Research this design draws on
@@ -294,9 +325,19 @@ npm run build
 npx -y firebase-tools@latest deploy --only hosting
 ```
 
-The debug provider is only active on `localhost`. To use a stronger cloud model for
-explanations, set `VITE_CLOUD_MODEL` in `.env`; the default is the SDK's own default hybrid
-cloud model.
+The debug provider is only active on `localhost`.
+
+### Changing settings without a release
+
+In the Firebase console, open **Remote Config** and add either parameter, then publish:
+
+| Parameter | Values | Default |
+| --- | --- | --- |
+| `model_name` | A Gemini model name, such as `gemini-4-hydrogen` or `gemini-3.8-flash` | `gemini-4-hydrogen` |
+| `detection_passes` | `1` or `2` | `2` |
+
+Invalid values are ignored. For local testing, `VITE_CLOUD_MODEL` in `.env` overrides the
+model.
 
 ### Scripts
 
@@ -309,7 +350,7 @@ cloud model.
 
 ## Tests
 
-Everything that does not need a model is plain code with unit tests (239 at the time of
+Everything that does not need a model is plain code with unit tests (404 at the time of
 writing):
 
 - `src/privacy`: overlapping spans, repeated values, the redact/rehydrate round trip, the
@@ -317,8 +358,11 @@ writing):
   sample documents.
 - `src/ai`: the model-status logic, the schema parsers, and the whole strict mode flow,
   including a test that no document text reaches either cloud step.
-- `src/features/eval`: the leak test scoring, the runner, the Markdown report, and checks
-  that every planted detail in the corpus really appears in its document.
+- `src/features/eval`: the leak test scoring, the one-pass and two-pass comparison, the
+  Markdown report, and checks that every planted detail in both sets really appears in its
+  document.
+- `src/config` and `src/diagnostics`: settings validation, when to fall back to another
+  model, the diagnostic checks, and that reports never contain keys, tokens or document text.
 
 Models are replaced by fakes in unit tests only. The shipped app contains no mocked AI.
 
@@ -335,9 +379,11 @@ Models are replaced by fakes in unit tests only. The shipped app contains no moc
 - **Photo transcription is beta.** A small on-device model can misread a photographed page.
   Paste and PDF are the main paths.
 - **On-device limits.** Gemini Nano accepts text and JPEG/PNG images up to 9,216 tokens and
-  supports a limited set of output languages. Translation to Hindi or Tamil runs on-device
-  only if the browser's model supports the language; otherwise the (already redacted) text
-  is translated in the cloud, and the badge shows that.
+  supports only a few output languages (in testing: German, English, Spanish, French and
+  Japanese). Translations into Indian languages therefore run in the cloud on the already
+  redacted text, and the badge shows that.
+- **Two detection passes take longer.** Each part of a document is read twice on-device. The
+  leak test reports the time for both, and Remote Config can switch to one pass.
 - **Strict mode is thinner.** The cloud works from at most ten short answers, so it can miss
   things the standard explanation would catch. Its on-device follow-ups read at most the
   first 12,000 characters of the document.
