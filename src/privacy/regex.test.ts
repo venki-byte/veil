@@ -165,6 +165,79 @@ describe('detectWithRegex: labelled values', () => {
   })
 })
 
+describe('detectWithRegex: addresses without a label', () => {
+  const addresses = (text: string) => detectWithRegex(text).filter((span) => span.type === 'ADDRESS').map((span) => span.text)
+
+  it.each([
+    '14, Lake View Road, Indiranagar, Bengaluru 560038',
+    'Flat 5C, Maple Residency, Kondapur, Hyderabad 500084',
+    'House No. 218, Sector 21-C, Chandigarh 160022',
+    '47 Tilak Marg, C-Scheme, Jaipur 302001',
+    'B-1204, Orchid Heights, Link Road, Malad West, Mumbai 400064',
+    'Chamber 14, District Court Complex, Coimbatore 641018',
+    '22 Avinashi Road, Peelamedu, Coimbatore 641004',
+  ])('finds %s inside a sentence', (address) => {
+    expect(addresses(`He lives at ${address}. Please write to him there.`)).toEqual([address])
+  })
+
+  it('finds the address at the start of a line and stops at the line end', () => {
+    expect(addresses('SUNRISE LAB\n14, Lake View Road, Indiranagar, Bengaluru 560038\nPhone: 98450 12367')).toEqual([
+      '14, Lake View Road, Indiranagar, Bengaluru 560038',
+    ])
+  })
+
+  it('does not swallow the words before a flat number', () => {
+    expect(addresses('Purpose: Purchase of Flat B-904, Palm Grove Heights, Sholinganallur, Chennai 600119.')).toEqual([
+      'Flat B-904, Palm Grove Heights, Sholinganallur, Chennai 600119',
+    ])
+  })
+
+  it('hides the whole address as one unit, not the PIN code separately', () => {
+    const spans = detectWithRegex('Send to 14, Lake View Road, Indiranagar, Bengaluru 560038 today')
+    expect(spans.map((span) => span.type)).toEqual(['ADDRESS'])
+  })
+
+  it.each([
+    'The loan of Rs. 62,00,000 is for 240 months at 8.85% with an EMI of Rs. 55,180.',
+    'On 12 November 2026, the report was released, and the patient was told, in person, to return.',
+    'The 5th floor, the lift, the stairs and the gate are shared by all tenants.',
+    'Haemoglobin 10.8, MCV 74, platelets 2.6, WBC 7,400, glucose 132, TSH 6.8',
+    'Rate 8.85%, tenure 240 months, EMI 55,180, fee 31,000 plus GST, due 10 February 2027.',
+  ])('does not treat ordinary text as an address: %s', (text) => {
+    expect(addresses(text)).toEqual([])
+  })
+
+  it('needs a number in the first part and a PIN code at the end', () => {
+    expect(addresses('Maple Residency, Kondapur, Hyderabad 500084')).toEqual([])
+    expect(addresses('14, Lake View Road, Indiranagar, Bengaluru')).toEqual([])
+  })
+})
+
+describe('detectWithRegex: company names', () => {
+  const orgs = (text: string) => detectWithRegex(text).filter((span) => span.type === 'ORG').map((span) => span.text)
+
+  it.each([
+    ['Quantel Systems India Private Limited', 'Quantel Systems India Private Limited'],
+    ['Brightpath Analytics Private Limited', 'Brightpath Analytics Private Limited'],
+    ['Meridian Infra Projects Limited', 'Meridian Infra Projects Limited'],
+    ['Acme Traders Pvt. Ltd.', 'Acme Traders Pvt. Ltd.'],
+    ['Northfield Housing LLP', 'Northfield Housing LLP'],
+    ['NORTHFIELD HOUSING FINANCE LIMITED', 'NORTHFIELD HOUSING FINANCE LIMITED'],
+  ])('finds %s', (name, expected) => {
+    expect(orgs(`Offer from ${name} is attached.`)).toEqual([expected])
+  })
+
+  it('leaves out the words that start the phrase', () => {
+    expect(orgs('Regards,\nFor Northfield Housing Finance Limited\nBranch Manager')).toEqual(['Northfield Housing Finance Limited'])
+    expect(orgs('Sent by The Meridian Infra Projects Limited today')).toEqual(['Meridian Infra Projects Limited'])
+  })
+
+  it('does not match a legal suffix on its own or in ordinary phrases', () => {
+    expect(orgs('Limited liability applies. The offer is limited to residents. Incorporated in 1999.')).toEqual([])
+    expect(orgs('Unlimited data and a Limited Edition watch')).toEqual([])
+  })
+})
+
 describe('detectWithRegex: general behaviour', () => {
   it('returns sorted, non-overlapping spans with correct offsets', () => {
     for (const text of [labReport, rental, loan]) {

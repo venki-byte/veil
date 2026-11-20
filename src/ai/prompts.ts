@@ -10,9 +10,28 @@
  * and directive wording on purpose.
  */
 
-const PLACEHOLDER_RULES = `The text has had personal details replaced with placeholders such as [PERSON_1], [ORG_1], [ADDRESS_1], [ID_1], [ACCOUNT_1], [CONTACT_1] and [DATE_OF_BIRTH_1].
-- When you refer to those people or things, use the placeholders exactly as written, including the square brackets.
-- Never guess, invent or ask for the hidden values.`
+const PLACEHOLDER_PATTERN = /\[[A-Z_]+_\d+\]/g
+
+/** The distinct placeholders, such as [PERSON_1], that appear in `source`, in order. */
+export function placeholdersIn(source: string): string[] {
+  return [...new Set(source.match(PLACEHOLDER_PATTERN) ?? [])]
+}
+
+/**
+ * Rules about placeholders. They list only the placeholders that really
+ * appear in `source`: a model that is shown a placeholder it never saw in the
+ * text tends to copy it into its answer, where it can never be restored.
+ */
+export function placeholderRules(source: string): string {
+  const present = placeholdersIn(source)
+  const which = present.length
+    ? `The text has had personal details replaced with placeholders. The placeholders in it are: ${present.join(', ')}.
+- When you refer to those people or things, use these placeholders exactly as written, including the square brackets.
+- Use only the placeholders in that list. Never invent a placeholder, and never write one for something that is named in the text.`
+    : `The text contains no placeholders. Do not write any placeholder or any other text in square brackets.`
+  return `${which}
+- Never guess, invent or ask for hidden values.`
+}
 
 const EXPLAIN_NOT_ADVISE = `- Explain what the document says. Do not give medical, legal or financial advice, do not diagnose, and do not tell the reader what decision to make.
 - Use only what is in the document. If something is unclear or missing, say so.
@@ -74,7 +93,7 @@ ${chunk}
 export function explainPrompt(redactedDocument: string): string {
   return `You are Veil, a careful assistant that explains personal paperwork in plain language.
 
-${PLACEHOLDER_RULES}
+${placeholderRules(redactedDocument)}
 ${EXPLAIN_NOT_ADVISE}
 
 ${EXPLANATION_FIELDS}
@@ -123,7 +142,7 @@ export function strictAnswerPrompt(chunk: string, questions: Array<{ id: string;
   return `Answer each question using only the excerpt below.
 - Keep each answer short: a few words or one short sentence of at most 30 words.
 - Copy amounts, dates and numbers exactly as written.
-- The excerpt contains placeholders such as [PERSON_1] or [ORG_1]. Keep them exactly as written.
+- Placeholders in square brackets, such as the ones in the excerpt, must be kept exactly as written. Never add a new one.
 - If the excerpt does not contain the answer, answer exactly: NOT FOUND
 - Give one answer for every question id.
 
@@ -142,7 +161,7 @@ export function strictCombinePrompt(documentType: string, facts: Array<{ questio
 
 You have not seen the document, and you will not see it. A model on the reader's device read it and answered questions about it. The document is a "${documentType}". The answers are below.
 
-${PLACEHOLDER_RULES}
+${placeholderRules(facts.map((fact) => `${fact.question} ${fact.answer}`).join('\n'))}
 ${EXPLAIN_NOT_ADVISE}
 - Base everything on the answers below. Do not invent facts. If the answers leave something out, say that it could not be determined rather than guessing.
 
@@ -156,7 +175,7 @@ ${facts.map((fact) => `Q: ${fact.question}\nA: ${fact.answer}`).join('\n\n')}`
 export function quickReadPrompt(redactedDocument: string): string {
   return `Give a quick read of the document below.
 
-${PLACEHOLDER_RULES}
+${placeholderRules(redactedDocument)}
 ${EXPLAIN_NOT_ADVISE}
 
 Write 4 to 6 short sentences: what kind of document this is, the most important facts, numbers and dates in it, and anything the reader should look at closely.
@@ -171,7 +190,7 @@ ${redactedDocument}
 export function simplifyPrompt(text: string): string {
   return `Rewrite the text below in simpler words, for a reader who finds official language hard.
 - Use short sentences and common words. Keep every fact, number and date.
-- Keep placeholders such as [PERSON_1] or [ORG_1] exactly as written.
+- Keep any placeholders in square brackets exactly as written, and do not add new ones.
 - Do not add advice or new information. Plain text only.
 
 Text:
@@ -184,7 +203,7 @@ ${text}
 export function definePrompt(term: string, context: string): string {
   return `Explain the term "${term}" in two or three short sentences of everyday language, as it is used in the context below.
 - Say what it means in general, then what it refers to here.
-- Keep placeholders such as [PERSON_1] exactly as written.
+- Keep any placeholders in square brackets exactly as written, and do not add new ones.
 - Do not give advice. Plain text only.
 
 Context:
@@ -197,7 +216,7 @@ ${context}
 export function translatePrompt(text: string, languageName: string): string {
   return `Translate the text below into ${languageName}.
 - Use natural, everyday ${languageName}.
-- Keep placeholders such as [PERSON_1] or [ORG_1] exactly as written, in Latin letters with the square brackets.
+- Keep any placeholders in square brackets exactly as written, in Latin letters with the square brackets, and do not add new ones.
 - Keep numbers, amounts and dates unchanged.
 - Output only the translation.
 
@@ -222,7 +241,7 @@ export function followUpPrompt(redactedDocument: string, history: FollowUpTurn[]
 
   return `You are Veil, a careful assistant that answers questions about a personal document in plain language.
 
-${PLACEHOLDER_RULES}
+${placeholderRules(`${redactedDocument}\n${history.map((turn) => `${turn.question} ${turn.answer}`).join('\n')}\n${question}`)}
 ${EXPLAIN_NOT_ADVISE}
 - Answer in 2 to 5 sentences. If the document does not answer the question, say that it does not.
 

@@ -108,6 +108,31 @@ const NAME_LABEL = new RegExp(
   'gi',
 )
 
+/**
+ * An address written without a label, recognised by its shape:
+ *   [Flat|House No.|Plot|...] <number token> [a word or two], <part>, ..., <City> <6-digit PIN>
+ * for example "14, Lake View Road, Indiranagar, Bengaluru 560038" or
+ * "Flat 5C, Maple Residency, Kondapur, Hyderabad 500084". The first token
+ * must contain a digit, and the last part must end in a PIN code, which keeps
+ * ordinary sentences and amounts from matching.
+ */
+const ADDRESS_WITH_PIN = new RegExp(
+  '(?<![\\p{L}\\p{N}])' +
+    '(?:(?:Flat|House|Plot|Door|Block|Chamber|Room|Unit|Villa|Apartment|Apt|Suite|Shop|Office)\\.?(?:[ \\t]+No\\.?)?[ \\t]+)?' +
+    '(?=[^\\s,]*\\d)[\\p{L}\\p{N}/.-]{1,12}' +
+    "(?:[ \\t]+\\p{L}[\\p{L}.'-]*){0,2}" +
+    '(?:,[ \\t]*[^\\n,;:|()]{1,40}){1,5}' +
+    ',[ \\t]*\\p{L}[^\\n,;:|()\\d]{1,30}?[ \\t]+[1-9]\\d{5}(?!\\d)',
+  'gu',
+)
+
+/** Capitalised words ending in a company legal suffix. */
+const COMPANY_NAME =
+  /(?<![\p{L}\p{N}])(?:\p{Lu}[\p{L}&'.-]*[ \t]+){1,6}(?:Private[ \t]+Limited|PRIVATE[ \t]+LIMITED|Pvt\.?[ \t]+Ltd\.?|PVT\.?[ \t]+LTD\.?|Limited|LIMITED|Ltd\.?|LTD\.?|LLP|LLC|Inc\.?|INC\.?|Incorporated|Corporation|CORPORATION|Corp\.?)(?![\p{L}])/gu
+
+/** Words that start a sentence or phrase and are not part of a company name. */
+const COMPANY_LEAD_WORDS = new Set(['the', 'for', 'to', 'from', 'by', 'at', 'of', 'and', 'with', 'dear', 'attn', 'attn.', 'in', 'on', 'as'])
+
 /** A personal title followed by up to four capitalised words on the same line. */
 const TITLED_NAME =
   /(?<![\p{L}\p{N}])(?:Mr|Mrs|Ms|Miss|Dr|Prof|Shri|Smt)\.?[ \t]+(\p{Lu}[\p{L}'-]+(?:[ \t]+\p{Lu}[\p{L}'-]+){0,3})/gu
@@ -177,6 +202,20 @@ export function detectWithRegex(text: string): Span[] {
     if (spans.some((kept) => overlaps(kept, span))) return false
     spans.push(span)
     return true
+  }
+
+  /**
+   * Claims a whole address as one span. An address may contain a PIN code or
+   * phone number that was claimed earlier; those inner claims are dropped so
+   * the address is hidden as one unit.
+   */
+  const claimAddress = (start: number, value: string) => {
+    const span: Span = { start, end: start + value.length, text: value, type: 'ADDRESS', source: 'regex' }
+    for (let index = spans.length - 1; index >= 0; index -= 1) {
+      const kept = spans[index]
+      if (kept.start >= span.start && kept.end <= span.end) spans.splice(index, 1)
+    }
+    if (!spans.some((kept) => overlaps(kept, span))) spans.push(span)
   }
 
   // 1. Emails.
@@ -284,20 +323,22 @@ export function detectWithRegex(text: string): Span[] {
     const offset = raw.length - raw.trimStart().length
     const value = raw.trim().replace(/[\s,.;:]+$/, '')
     if (value.length < 6) continue
-    // An address span may contain a PIN code or phone that was claimed above.
-    // Drop those inner claims: the whole address is hidden as one unit.
-    const span: Span = {
-      start: rawStart + offset,
-      end: rawStart + offset + value.length,
-      text: value,
-      type: 'ADDRESS',
-      source: 'regex',
-    }
-    for (let index = spans.length - 1; index >= 0; index -= 1) {
-      const kept = spans[index]
-      if (kept.start >= span.start && kept.end <= span.end) spans.splice(index, 1)
-    }
-    if (!spans.some((kept) => overlaps(kept, span))) spans.push(span)
+    claimAddress(rawStart + offset, value)
+  }
+
+  // 8. Addresses with no label, recognised by their shape: a house or flat
+  //    number, a few comma-separated parts, and a city followed by a PIN code.
+  for (const match of text.matchAll(ADDRESS_WITH_PIN)) claimAddress(match.index, match[0])
+
+  // 9. Company names that end in a legal suffix: "Quantel Systems India Private Limited".
+  for (const match of text.matchAll(COMPANY_NAME)) {
+    const words = match[0].split(/\s+/)
+    let skip = 0
+    while (skip < words.length - 1 && COMPANY_LEAD_WORDS.has(words[skip].toLowerCase())) skip += 1
+    const value = words.slice(skip).join(' ')
+    // At least one name word must come before the legal suffix.
+    if (!/^\p{Lu}[\p{L}&'.-]*[ \t]+\S/u.test(value) || value.split(/\s+/).length < 2) continue
+    claim(match.index + match[0].indexOf(value), value, 'ORG')
   }
 
   return spans.sort((a, b) => a.start - b.start)

@@ -197,6 +197,12 @@ describe('end to end on the sample documents (fake Nano)', () => {
     const redacted = registry.redact(sample.text)
     const missed = sample.mustHide.filter((secret) => redacted.includes(secret))
     expect(findLeaks(redacted, registry)).toEqual([])
-    expect(missed.length).toBeGreaterThan(0)
+    if (sample.name === 'lab report') {
+      // Its only unlabelled detail is a street address ending in a PIN code,
+      // which the address-shape pattern recognises without a model.
+      expect(missed).toEqual([])
+    } else {
+      expect(missed.length).toBeGreaterThan(0)
+    }
   })
 })

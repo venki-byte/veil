@@ -97,13 +97,42 @@ Nano. Scoring is plain code and is done by position: a planted detail counts as 
 if every letter and digit of every occurrence would be replaced by a placeholder. If any
 part would still be visible to the cloud, it counts as leaked.
 
-<!-- TODO before submitting: open #/eval in Chrome with Gemini Nano ready, click
-     "Run the leak test", then "Copy table", and paste the table below in place of this
-     comment. State the Chrome version and machine it was run on. -->
+**First run** (Chrome 158 on Windows, Gemini Nano, 2026-11-20). 70 planted details in ten
+documents; 8.1 seconds per document with Gemini Nano:
 
-_Results table to be added from a real run. See the note in the source of this file._
+| Document | Planted details | Leaked: regex only | Leaked: regex + Gemini Nano | Time: regex + Nano |
+| --- | ---: | ---: | ---: | ---: |
+| Liver function test | 6 | 1 | 0 | 6.7 s |
+| Hospital discharge summary | 6 | 2 | 0 | 11.6 s |
+| Doctor's travel certificate | 6 | 2 | 0 | 8.3 s |
+| Rent agreement | 10 | 5 | 0 | 8.2 s |
+| Personal loan sanction letter | 9 | 1 | 0 | 10.0 s |
+| Bank KYC reminder | 6 | 3 | 0 | 9.0 s |
+| Income tax notice | 5 | 1 | 0 | 4.2 s |
+| Health insurance claim letter | 7 | 1 | 0 | 13.2 s |
+| Employment offer letter | 8 | 5 | 4 | 5.6 s |
+| Legal notice for a bounced cheque | 7 | 4 | 1 | 4.4 s |
+| **Total (10 documents)** | **70** | **25 (35.7%)** | **5 (7.1%)** | **8.1 s per document** |
 
-The test documents and their planted details are in
+Pattern matching alone left about a third of the planted details visible; adding Gemini Nano
+brought that to about 7%. The five that Gemini Nano still missed were two unlabelled
+addresses, a company name and two people's names written inside sentences.
+
+**What the first run exposed, and what changed.** The same run, on a whole sample lab report,
+showed that an unlabelled street address was not hidden, and that the cloud sometimes copied an
+example placeholder (`[ORG_1]`) from the prompt into its answer. Both were fixed afterwards:
+a pattern for addresses that end in a PIN code, a pattern for company names with a legal
+suffix ("... Private Limited"), and prompts that list only the placeholders actually present
+in the text. With those patterns, **pattern matching alone** now leaks 17 of 70 (24.3%); this
+number is deterministic and is checked by the unit tests. The regex + Gemini Nano column has
+not been re-run since those changes.
+
+<!-- TODO before submitting: re-run the "Full document test" on #/routing, or the leak test
+     on #/eval, in Chrome with Gemini Nano ready, and add the new regex + Nano numbers here. -->
+
+Be careful how you read these numbers: the ten documents were written before the run, but the
+patterns above were added after seeing which details were missed, so the second set of
+figures is likely to be optimistic for documents that are not like these. The test documents and their planted details are in
 [`src/features/eval/corpus.ts`](src/features/eval/corpus.ts). Every person, organisation,
 address and number in them is invented. Ten documents is a small sample: treat the result
 as an indication, not a guarantee.

@@ -119,11 +119,11 @@ describe('runEndToEnd: a healthy machine', () => {
 
 describe('runEndToEnd: failures are caught and reported', () => {
   it('fails detection when a name survives redaction, and says which', async () => {
-    // The street address has no label, so only a model can find it.
-    const { deps } = build({ detectChunk: async () => [], mustBeHidden: ['Meenakshi', 'Lake View Road'] })
+    // The lab's name has no label and no legal suffix, so only a model can find it.
+    const { deps } = build({ detectChunk: async () => [], mustBeHidden: ['Meenakshi', 'Sunrise Diagnostics'] })
     const [first] = (await runEndToEnd(deps)).outcomes
     expect(first.status).toBe('fail')
-    expect(first.detail).toContain('STILL VISIBLE: Lake View Road')
+    expect(first.detail).toContain('STILL VISIBLE: Sunrise Diagnostics')
     expect(first.detail).not.toContain('Meenakshi,')
   })
 
