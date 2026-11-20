@@ -10,10 +10,11 @@
 
 import { runStrict, type DocumentType, type StrictFact, type StrictQuestion, type ChunkAnswer } from '../ai/strict'
 import type { Explanation } from '../ai/schemas'
-import { EVAL_CORPUS } from '../features/eval/corpus'
+import { EVAL_CORPUS, type EvalDocument } from '../features/eval/corpus'
+import { HELDOUT_CORPUS } from '../features/eval/heldout'
 import { formatMs, formatPercent, runEval, summarise, toMarkdown } from '../features/eval/score'
 import { normaliseText } from '../features/ingest/readFile'
-import { detectDocument, type NanoFinding } from '../privacy/detect'
+import { detectDocument, type NanoDetector } from '../privacy/detect'
 import { findLeaks } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import type { CheckOutcome, SourceName } from './report'
@@ -33,7 +34,8 @@ export interface E2EDeps {
   followUpQuestion: string
   term: string
 
-  detectChunk: (chunk: string) => Promise<NanoFinding[]>
+  /** The on-device detection passes, as the app runs them. */
+  detectPasses: NanoDetector[]
   explain: (redacted: string, registry: Registry) => Promise<Timed<Explanation>>
   followUp: (redactedDoc: string, redactedQuestion: string, registry: Registry) => Promise<Timed<string>>
   simplify: (text: string, registry: Registry) => Promise<Timed<string>>
@@ -63,7 +65,7 @@ export interface E2EResult {
   appendix: string
 }
 
-export const E2E_TOTAL = 12
+export const E2E_TOTAL = 13
 
 const preview = (text: string, limit = 90) => {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -122,14 +124,14 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
     'Detect and redact a whole document',
     `every name in the sample hidden (${deps.mustBeHidden.join(', ')})`,
     async () => {
-      const result = await detectDocument(text, { nano: deps.detectChunk })
+      const result = await detectDocument(text, { nano: deps.detectPasses })
       registry.addSpans(result.spans)
       redacted = registry.redact(text)
       const survived = deps.mustBeHidden.filter((word) => redacted.toLowerCase().includes(word.toLowerCase()))
       return {
         status: survived.length === 0 && result.nanoFailures === 0 ? 'pass' : 'fail',
         detail:
-          `${registry.active().length} details hidden (${result.nanoChunks} chunk(s) read by Gemini Nano, ${result.nanoFailures} failed)` +
+          `${registry.active().length} details hidden (${result.nanoChunks} chunk(s), ${deps.detectPasses.length} on-device pass(es), ${result.nanoFailures} failed call(s))` +
           (survived.length ? `; STILL VISIBLE: ${survived.join(', ')}` : '; none of the planted names survive'),
       }
     },
@@ -273,21 +275,34 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
     })
   }
 
-  // 11. The leak test, with Gemini Nano, on the ten synthetic documents.
-  await check('Leak test: 10 documents, regex versus regex + Gemini Nano', 'Nano leaks no more than regex alone', async () => {
-    const rows = await runEval(EVAL_CORPUS, { nano: deps.detectChunk, prepare: normaliseText, now })
-    const summary = summarise(rows)
-    appendix = toMarkdown(rows)
-    if (!summary.nano) return { status: 'fail', detail: 'Gemini Nano did not run on every document.' }
-    const stillVisible = rows.flatMap((row) => (row.nano?.score.leaked ?? []).map((detail) => `${detail.planted.value}`))
-    return {
-      status: summary.nano.leaked <= summary.regex.leaked && summary.nano.failures === 0 ? 'pass' : 'fail',
-      detail:
-        `${summary.planted} planted details. Regex only leaked ${summary.regex.leaked} (${formatPercent(summary.regex.leakRate)}); ` +
-        `regex + Nano leaked ${summary.nano.leaked} (${formatPercent(summary.nano.leakRate)}), ${formatMs(summary.nano.msPerDocument)} per document, ` +
-        `${summary.nano.failures} chunk failure(s). Still visible with Nano: ${stillVisible.length ? stillVisible.join('; ') : 'none'}`,
-    }
-  })
+  // 11 and 12. The leak test on both sets: the development set (patterns
+  // have been tuned on it) and the held-out set (never tuned on).
+  const tables: string[] = []
+  const leakTest = (title: string, label: string, corpus: EvalDocument[]) =>
+    check(title, 'Gemini Nano leaks no more than regex alone, with no failed calls', async () => {
+      const rows = await runEval(corpus, { nano: deps.detectPasses, prepare: normaliseText, now })
+      const summary = summarise(rows)
+      tables.push(`${label}\n\n${toMarkdown(rows)}`)
+      const best = summary.nanoPlus ?? summary.nano
+      if (!best) return { status: 'fail', detail: 'Gemini Nano did not run on every document.' }
+      const bestRows = rows.map((row) => row.nanoPlus ?? row.nano)
+      const stillVisible = bestRows.flatMap((result) => (result?.score.leaked ?? []).map((detail) => detail.planted.value))
+      const describe = (name: string, method: typeof best) =>
+        `${name} leaked ${method.leaked} (${formatPercent(method.leakRate)}), ${formatMs(method.msPerDocument)} per document`
+      return {
+        status: best.leaked <= summary.regex.leaked && best.failures === 0 ? 'pass' : 'fail',
+        detail:
+          `${summary.planted} planted details. Regex only leaked ${summary.regex.leaked} (${formatPercent(summary.regex.leakRate)}); ` +
+          [summary.nano && describe('+ Nano 1 pass', summary.nano), summary.nanoPlus && describe('+ Nano 2 passes', summary.nanoPlus)]
+            .filter(Boolean)
+            .join('; ') +
+          `; ${best.failures} failed call(s). Still visible: ${stillVisible.length ? stillVisible.join('; ') : 'none'}`,
+      }
+    })
+
+  await leakTest('Leak test, development set (10 documents)', 'Development set (patterns were tuned on these)', EVAL_CORPUS)
+  await leakTest('Leak test, held-out set (10 new documents)', 'Held-out set (never tuned on)', HELDOUT_CORPUS)
+  appendix = tables.join('\n\n')
 
   // 12. Audit: nothing that went to the cloud in this run contains a hidden value.
   await check('Privacy audit of everything sent to the cloud', 'no hidden value appears in any cloud request', async () => {

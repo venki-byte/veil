@@ -21,18 +21,31 @@ export interface NanoFinding {
 export type NanoDetector = (chunkText: string) => Promise<NanoFinding[]>
 
 export interface DetectionResult {
+  /** All findings merged: regex plus every on-device pass. */
   spans: Span[]
+  /** Regex findings on their own, before merging. */
+  regexSpans: Span[]
+  /** Each on-device pass's findings on their own, before merging. */
+  passSpans: Span[][]
+  /** Time spent in each on-device pass, in milliseconds. */
+  passMs: number[]
+  /** Failed calls in each on-device pass. */
+  passFailures: number[]
   /** Number of chunks Nano was asked to read. Zero in regex-only mode. */
   nanoChunks: number
-  /** Chunks where Nano failed. Their text was covered by regex only. */
+  /** Number of on-device calls made: chunks times passes. */
+  nanoCalls: number
+  /** On-device calls that failed. Their chunk was covered by regex and the other passes. */
   nanoFailures: number
 }
 
 export interface DetectOptions {
-  nano?: NanoDetector
+  /** One on-device detector, or several passes that each read every chunk. */
+  nano?: NanoDetector | NanoDetector[]
   maxChunkChars?: number
   onProgress?: (done: number, total: number) => void
   signal?: AbortSignal
+  now?: () => number
 }
 
 /** Field labels and generic words that a small model sometimes returns. */
@@ -98,35 +111,64 @@ export function spansFromNano(chunk: Chunk, findings: NanoFinding[]): Span[] {
 
 /**
  * Runs the full detection pipeline on a document.
- * Regex always runs. Nano runs on each chunk if a detector is supplied.
+ *
+ * Regex always runs. Then each on-device pass reads every chunk. Several
+ * narrow passes ("find everything", then "find every person and
+ * organisation") catch more than one broad pass, because small models do
+ * best on narrow jobs.
  */
 export async function detectDocument(text: string, options: DetectOptions = {}): Promise<DetectionResult> {
+  const now = options.now ?? (() => performance.now())
   const regexSpans = detectWithRegex(text)
-  if (!options.nano) {
-    return { spans: mergeSpans(regexSpans), nanoChunks: 0, nanoFailures: 0 }
+  const passes = options.nano === undefined ? [] : Array.isArray(options.nano) ? options.nano : [options.nano]
+  if (passes.length === 0) {
+    return {
+      spans: mergeSpans(regexSpans),
+      regexSpans,
+      passSpans: [],
+      passMs: [],
+      passFailures: [],
+      nanoChunks: 0,
+      nanoCalls: 0,
+      nanoFailures: 0,
+    }
   }
 
   const chunks = chunkText(text, options.maxChunkChars ?? DEFAULT_CHUNK_CHARS)
-  const nanoSpans: Span[] = []
+  const passSpans: Span[][] = passes.map(() => [])
+  const passMs: number[] = passes.map(() => 0)
+  const passFailures: number[] = passes.map(() => 0)
+  let calls = 0
   let failures = 0
 
   options.onProgress?.(0, chunks.length)
   for (let index = 0; index < chunks.length; index += 1) {
     if (options.signal?.aborted) break
-    try {
-      const findings = await options.nano(chunks[index].text)
-      nanoSpans.push(...spansFromNano(chunks[index], findings))
-    } catch {
-      // A failed chunk must not stop the document. Regex still covers it,
-      // and the failure count is shown to the user.
-      failures += 1
+    for (let pass = 0; pass < passes.length; pass += 1) {
+      const started = now()
+      calls += 1
+      try {
+        const findings = await passes[pass](chunks[index].text)
+        passSpans[pass].push(...spansFromNano(chunks[index], findings))
+      } catch {
+        // A failed call must not stop the document. Regex and the other
+        // passes still cover the chunk, and the failure is shown to the user.
+        failures += 1
+        passFailures[pass] += 1
+      }
+      passMs[pass] += now() - started
     }
     options.onProgress?.(index + 1, chunks.length)
   }
 
   return {
-    spans: mergeSpans([...regexSpans, ...nanoSpans]),
+    spans: mergeSpans([...regexSpans, ...passSpans.flat()]),
+    regexSpans,
+    passSpans,
+    passMs,
+    passFailures,
     nanoChunks: chunks.length,
+    nanoCalls: calls,
     nanoFailures: failures,
   }
 }

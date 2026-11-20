@@ -91,7 +91,7 @@ const STATUS_MARK: Record<CheckStatus, string> = { pass: 'PASS', fail: 'FAIL', e
 
 function ledgerLine(entry: LedgerEntry): string {
   const time = new Date(entry.time).toISOString().slice(11, 19)
-  const ran = entry.source ? entry.source.toUpperCase() : 'DID NOT RUN'
+  const ran = entry.source ? `${entry.source.toUpperCase()}${entry.model ? ` (${entry.model})` : ''}` : 'DID NOT RUN'
   const sent = entry.outbound === null ? 'nothing sent' : `${entry.outbound.length} chars sent to cloud`
   const parts = [`${time}`, entry.task, entry.mode, ran, formatMs(entry.durationMs), entry.status.toUpperCase(), sent]
   const extra = [entry.note, entry.error].filter(Boolean).map((text) => oneLine(String(text), 220))

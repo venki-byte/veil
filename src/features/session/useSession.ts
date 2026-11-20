@@ -14,7 +14,7 @@ import {
   classifyDocument,
   defineTerm,
   describeError,
-  detectSensitive,
+  detectionPasses,
   explainDocument,
   explainFromFacts,
   getDeviceState,
@@ -195,7 +195,7 @@ export function useSession() {
       setDetection({ running: true, done: 0, total: 0, nanoUsed: useNano, nanoFailures: 0 })
 
       const result = await detectDocument(text, {
-        nano: useNano ? detectSensitive : undefined,
+        nano: useNano ? detectionPasses() : undefined,
         signal: controller.signal,
         onProgress: (done, total) => {
           if (run === runId.current) setDetection((current) => (current ? { ...current, done, total } : current))
@@ -209,7 +209,7 @@ export function useSession() {
         running: false,
         done: result.nanoChunks,
         total: result.nanoChunks,
-        nanoUsed: useNano && result.nanoFailures < Math.max(result.nanoChunks, 1),
+        nanoUsed: useNano && result.nanoFailures < Math.max(result.nanoCalls, 1),
         nanoFailures: result.nanoFailures,
       })
       setStage('review')

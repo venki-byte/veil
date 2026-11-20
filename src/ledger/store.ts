@@ -29,6 +29,8 @@ export interface LedgerEntry {
   inputChars: number
   /** Whether the input included an image (processed on-device only). */
   hadImage: boolean
+  /** The cloud model that answered, when the call ran in the cloud. */
+  model?: string
   /** Extra context, such as a fallback or the list of blocked placeholders. */
   note?: string
   error?: string

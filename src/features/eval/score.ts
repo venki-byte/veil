@@ -9,7 +9,7 @@
 
 import { detectDocument, type NanoDetector } from '../../privacy/detect'
 import { Registry } from '../../privacy/registry'
-import { locateAll, overlaps } from '../../privacy/spans'
+import { locateAll, mergeSpans, overlaps } from '../../privacy/spans'
 import type { Span } from '../../privacy/types'
 import type { EvalDocument, Planted } from './corpus'
 
@@ -102,7 +102,7 @@ export interface MethodResult {
   score: DocumentScore
   /** Time spent on detection for this document, in milliseconds. */
   ms: number
-  /** Chunks where the on-device model failed. Always 0 for regex only. */
+  /** On-device calls that failed. Always 0 for regex only. */
   failures: number
 }
 
@@ -111,13 +111,15 @@ export interface EvalRow {
   title: string
   planted: number
   regex: MethodResult
-  /** Null when the on-device model was not available for the run. */
+  /** Regex plus the first on-device pass. Null when the model did not run. */
   nano: MethodResult | null
+  /** Regex plus every on-device pass. Null unless more than one pass ran. */
+  nanoPlus: MethodResult | null
 }
 
 export interface RunOptions {
-  /** The on-device detector. Leave out to test regex only. */
-  nano?: NanoDetector
+  /** The on-device detector, or several passes. Leave out to test regex only. */
+  nano?: NanoDetector | NanoDetector[]
   onProgress?: (done: number, total: number, row: EvalRow) => void
   signal?: AbortSignal
   now?: () => number
@@ -125,9 +127,14 @@ export interface RunOptions {
   prepare?: (text: string) => string
 }
 
-/** Runs every document through regex only and, if available, regex plus Nano. */
+/**
+ * Runs every document through regex only and, if a model is given, regex plus
+ * the on-device passes. With two passes, one run yields both the one-pass and
+ * the two-pass scores, because each pass's findings are kept separately.
+ */
 export async function runEval(corpus: EvalDocument[], options: RunOptions = {}): Promise<EvalRow[]> {
   const now = options.now ?? (() => performance.now())
+  const passes = options.nano === undefined ? [] : Array.isArray(options.nano) ? options.nano : [options.nano]
   const rows: EvalRow[] = []
 
   for (const document of corpus) {
@@ -143,17 +150,24 @@ export async function runEval(corpus: EvalDocument[], options: RunOptions = {}):
     }
 
     let nano: MethodResult | null = null
-    if (options.nano) {
-      const nanoStart = now()
-      const nanoResult = await detectDocument(text, { nano: options.nano, signal: options.signal })
+    let nanoPlus: MethodResult | null = null
+    if (passes.length > 0) {
+      const result = await detectDocument(text, { nano: passes, signal: options.signal, now })
       nano = {
-        score: scoreDocument(text, document.planted, nanoResult.spans),
-        ms: now() - nanoStart,
-        failures: nanoResult.nanoFailures,
+        score: scoreDocument(text, document.planted, mergeSpans([...result.regexSpans, ...result.passSpans[0]])),
+        ms: result.passMs[0],
+        failures: result.passFailures[0],
+      }
+      if (passes.length > 1) {
+        nanoPlus = {
+          score: scoreDocument(text, document.planted, result.spans),
+          ms: result.passMs.reduce((sum, ms) => sum + ms, 0),
+          failures: result.nanoFailures,
+        }
       }
     }
 
-    const row: EvalRow = { id: document.id, title: document.title, planted: regex.score.planted, regex, nano }
+    const row: EvalRow = { id: document.id, title: document.title, planted: regex.score.planted, regex, nano, nanoPlus }
     rows.push(row)
     options.onProgress?.(rows.length, corpus.length, row)
   }
@@ -179,6 +193,7 @@ export interface EvalSummary {
   planted: number
   regex: MethodSummary
   nano: MethodSummary | null
+  nanoPlus: MethodSummary | null
 }
 
 function summariseMethod(results: MethodResult[], planted: number): MethodSummary {
@@ -192,9 +207,14 @@ function summariseMethod(results: MethodResult[], planted: number): MethodSummar
   }
 }
 
+/** Summarises one column, but only if it ran on every document. */
+function summariseColumn(rows: EvalRow[], pick: (row: EvalRow) => MethodResult | null, planted: number): MethodSummary | null {
+  const results = rows.map(pick).filter((result): result is MethodResult => result !== null)
+  return rows.length > 0 && results.length === rows.length ? summariseMethod(results, planted) : null
+}
+
 export function summarise(rows: EvalRow[]): EvalSummary {
   const planted = rows.reduce((sum, row) => sum + row.planted, 0)
-  const nanoResults = rows.map((row) => row.nano).filter((result): result is MethodResult => result !== null)
   return {
     documents: rows.length,
     planted,
@@ -202,8 +222,8 @@ export function summarise(rows: EvalRow[]): EvalSummary {
       rows.map((row) => row.regex),
       planted,
     ),
-    // Only report the model column if it ran on every document.
-    nano: rows.length > 0 && nanoResults.length === rows.length ? summariseMethod(nanoResults, planted) : null,
+    nano: summariseColumn(rows, (row) => row.nano, planted),
+    nanoPlus: summariseColumn(rows, (row) => row.nanoPlus, planted),
   }
 }
 
@@ -217,29 +237,37 @@ export function formatMs(ms: number): string {
 /** A Markdown table of the results, ready to paste into the README. */
 export function toMarkdown(rows: EvalRow[]): string {
   const summary = summarise(rows)
-  const withNano = summary.nano !== null
-  const cell = (result: MethodResult | null) => (result ? `${result.score.leaked.length}` : 'n/a')
+  const leaked = (result: MethodResult | null) => (result ? `${result.score.leaked.length}` : 'n/a')
+  const total = (method: MethodSummary) => `**${method.leaked} (${formatPercent(method.leakRate)})**`
+  const head = (title: string) => `| **Total (${summary.documents} documents)** | **${summary.planted}** | ${title}`
 
-  const lines = [
-    withNano
-      ? '| Document | Planted details | Leaked: regex only | Leaked: regex + Gemini Nano | Time: regex + Nano |'
-      : '| Document | Planted details | Leaked: regex only |',
-    withNano ? '| --- | ---: | ---: | ---: | ---: |' : '| --- | ---: | ---: |',
-  ]
-
-  for (const row of rows) {
-    lines.push(
-      withNano
-        ? `| ${row.title} | ${row.planted} | ${cell(row.regex)} | ${cell(row.nano)} | ${formatMs(row.nano!.ms)} |`
-        : `| ${row.title} | ${row.planted} | ${cell(row.regex)} |`,
-    )
+  if (summary.nanoPlus && summary.nano) {
+    return [
+      '| Document | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes | Time: 2 passes |',
+      '| --- | ---: | ---: | ---: | ---: | ---: |',
+      ...rows.map(
+        (row) =>
+          `| ${row.title} | ${row.planted} | ${leaked(row.regex)} | ${leaked(row.nano)} | ${leaked(row.nanoPlus)} | ${formatMs(row.nanoPlus!.ms)} |`,
+      ),
+      head(
+        `${total(summary.regex)} | ${total(summary.nano)} | ${total(summary.nanoPlus)} | **${formatMs(summary.nanoPlus.msPerDocument)} per document** |`,
+      ),
+    ].join('\n')
   }
 
-  lines.push(
-    withNano
-      ? `| **Total (${summary.documents} documents)** | **${summary.planted}** | **${summary.regex.leaked} (${formatPercent(summary.regex.leakRate)})** | **${summary.nano!.leaked} (${formatPercent(summary.nano!.leakRate)})** | **${formatMs(summary.nano!.msPerDocument)} per document** |`
-      : `| **Total (${summary.documents} documents)** | **${summary.planted}** | **${summary.regex.leaked} (${formatPercent(summary.regex.leakRate)})** |`,
-  )
+  if (summary.nano) {
+    return [
+      '| Document | Planted details | Leaked: regex only | Leaked: regex + Gemini Nano | Time: regex + Nano |',
+      '| --- | ---: | ---: | ---: | ---: |',
+      ...rows.map((row) => `| ${row.title} | ${row.planted} | ${leaked(row.regex)} | ${leaked(row.nano)} | ${formatMs(row.nano!.ms)} |`),
+      head(`${total(summary.regex)} | ${total(summary.nano)} | **${formatMs(summary.nano.msPerDocument)} per document** |`),
+    ].join('\n')
+  }
 
-  return lines.join('\n')
+  return [
+    '| Document | Planted details | Leaked: regex only |',
+    '| --- | ---: | ---: |',
+    ...rows.map((row) => `| ${row.title} | ${row.planted} | ${leaked(row.regex)} |`),
+    head(`${total(summary.regex)} |`),
+  ].join('\n')
 }

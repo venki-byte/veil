@@ -4,9 +4,10 @@ import {
   answerFollowUpOnDevice,
   answerOnDevice,
   classifyDocument,
-  CLOUD_MODEL,
+  cloudModelInfo,
   defineTerm,
   describeError,
+  detectionPasses,
   detectSensitive,
   explainDocument,
   explainFromFacts,
@@ -101,7 +102,7 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
         followUpQuestion: 'What is the haemoglobin result for Meenakshi Raghavan?',
         term: 'HbA1c',
 
-        detectChunk: detectSensitive,
+        detectPasses: detectionPasses(),
         explain: (redacted, registry) => explainDocument(redacted, registry),
         followUp: (redacted, question, registry) => answerFollowUp(redacted, [], question, registry),
         simplify,
@@ -134,7 +135,10 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
       appCheck: firebaseConfigured ? getAppCheckMode() : 'missing',
       debugTokenInEnv: Boolean(import.meta.env.VITE_APPCHECK_DEBUG_TOKEN),
       device: { status: current.status, image: current.image, error: current.error },
-      cloudModel: CLOUD_MODEL,
+      cloudModel: (() => {
+        const info = cloudModelInfo()
+        return `${info.model} (fallback ${info.fallback}; setting from ${info.source}); on-device detection passes: ${info.detectionPasses}`
+      })(),
       checks: outcomes,
       ledger: getLedger(),
       consoleEntries: getConsoleEntries(),

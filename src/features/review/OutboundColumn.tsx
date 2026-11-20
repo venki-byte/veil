@@ -120,7 +120,7 @@ export function OutboundColumn({ session, device, online }: OutboundColumnProps)
             </p>
             <p className="mt-1">
               {detection?.nanoFailures && detection.nanoUsed
-                ? `Gemini Nano could not read ${detection.nanoFailures} of ${detection.total} parts of this document, so those parts were checked with patterns only.`
+                ? `${detection.nanoFailures} of Gemini Nano's checks on this document failed, so parts of it were checked by patterns and the other pass only.`
                 : 'Gemini Nano did not check this document, so only details with a fixed shape or a clear label were found.'}{' '}
               Names and addresses inside sentences may still be visible below. Read the text and hide anything
               personal before you continue.

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  CLOUD_MODEL,
+  cloudModelInfo,
   describeError,
   InferenceMode,
   LeakBlockedError,
@@ -99,7 +99,10 @@ export function RoutingCheck({ device }: { device: DeviceState }) {
         <Fact label="Network" value={online ? 'Online' : 'Offline'} good={online} />
       </dl>
       <p className="mt-2 text-xs text-muted">
-        Cloud model: <span className="font-mono">{CLOUD_MODEL}</span>. The App Check debug token is printed in the browser console when the page loads.
+        Cloud model: <span className="font-mono">{cloudModelInfo().model}</span> (falls back to{' '}
+        <span className="font-mono">{cloudModelInfo().fallback}</span>; setting from {cloudModelInfo().source}). On-device
+        detection: {cloudModelInfo().detectionPasses === 2 ? 'two passes' : 'one pass'}. The App Check debug token is
+        printed in the browser console when the page loads.
       </p>
 
       <DiagnosticReport device={device} />

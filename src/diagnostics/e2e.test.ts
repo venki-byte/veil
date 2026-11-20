@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Explanation } from '../ai/schemas'
 import { EVAL_CORPUS } from '../features/eval/corpus'
+import { HELDOUT_CORPUS } from '../features/eval/heldout'
 import type { NanoFinding } from '../privacy/detect'
 import { locateAll } from '../privacy/spans'
 import labReport from '../../samples/lab-report.txt?raw'
@@ -17,7 +18,7 @@ const explanation: Explanation = {
 
 const timed = <T,>(value: T, source: Timed<T>['source'] = 'on_device'): Timed<T> => ({ value, source, durationMs: 100 })
 
-const allPlanted = EVAL_CORPUS.flatMap((document) => document.planted.flatMap((detail) => [detail.value, ...(detail.alsoWrittenAs ?? [])]))
+const allPlanted = [...EVAL_CORPUS, ...HELDOUT_CORPUS].flatMap((document) => document.planted.flatMap((detail) => [detail.value, ...(detail.alsoWrittenAs ?? [])]))
 const labNames = ['Meenakshi Raghavan', 'Anil Deshpande', 'Kavitha Subramaniam', 'Raghavan', 'Deshpande']
 
 /** A stand-in for Gemini Nano: finds every name it was told about. Unit tests only. */
@@ -37,7 +38,7 @@ function build(overrides: Partial<E2EDeps> = {}) {
     followUpQuestion: 'What is the haemoglobin result for Meenakshi Raghavan?',
     term: 'HbA1c',
 
-    detectChunk: fakeDetect,
+    detectPasses: [fakeDetect],
     explain: async (redacted) => {
       sent.push(redacted)
       return timed(explanation, 'in_cloud')
@@ -99,15 +100,27 @@ describe('runEndToEnd: a healthy machine', () => {
       'Quick read on this device',
       'Strict mode',
       'Follow-up after strict mode',
-      'Leak test: 10 documents, regex versus regex + Gemini Nano',
+      'Leak test, development set (10 documents)',
+      'Leak test, held-out set (10 new documents)',
       'Privacy audit of everything sent to the cloud',
     ])
   })
 
-  it('returns the leak test table for the README', async () => {
+  it('returns both leak test tables for the README, labelled', async () => {
     const { appendix } = await runEndToEnd(build().deps)
-    expect(appendix).toContain('| Document | Planted details | Leaked: regex only | Leaked: regex + Gemini Nano |')
-    expect(appendix).toContain('**Total (10 documents)**')
+    expect(appendix).toContain('Development set (patterns were tuned on these)')
+    expect(appendix).toContain('Held-out set (never tuned on)')
+    expect(appendix.match(/\*\*Total \(10 documents\)\*\*/g)).toHaveLength(2)
+  })
+
+  it('compares one pass with two when two passes are given', async () => {
+    const broad = async () => []
+    const { outcomes, appendix } = await runEndToEnd(build({ detectPasses: [broad, fakeDetect] }).deps)
+    expect(appendix).toContain('Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes')
+    const heldOut = outcomes[11]
+    expect(heldOut.detail).toContain('+ Nano 1 pass leaked')
+    expect(heldOut.detail).toContain('+ Nano 2 passes leaked 0')
+    expect(heldOut.status).toBe('pass')
   })
 
   it('reports progress after every check', async () => {
@@ -120,7 +133,7 @@ describe('runEndToEnd: a healthy machine', () => {
 describe('runEndToEnd: failures are caught and reported', () => {
   it('fails detection when a name survives redaction, and says which', async () => {
     // The lab's name has no label and no legal suffix, so only a model can find it.
-    const { deps } = build({ detectChunk: async () => [], mustBeHidden: ['Meenakshi', 'Sunrise Diagnostics'] })
+    const { deps } = build({ detectPasses: [async () => []], mustBeHidden: ['Meenakshi', 'Sunrise Diagnostics'] })
     const [first] = (await runEndToEnd(deps)).outcomes
     expect(first.status).toBe('fail')
     expect(first.detail).toContain('STILL VISIBLE: Sunrise Diagnostics')
@@ -129,13 +142,15 @@ describe('runEndToEnd: failures are caught and reported', () => {
 
   it('fails detection if Gemini Nano failed on a chunk', async () => {
     const { deps } = build({
-      detectChunk: async () => {
-        throw new Error('model crashed')
-      },
+      detectPasses: [
+        async () => {
+          throw new Error('model crashed')
+        },
+      ],
     })
     const [first] = (await runEndToEnd(deps)).outcomes
     expect(first.status).toBe('fail')
-    expect(first.detail).toContain('1 failed')
+    expect(first.detail).toContain('1 failed call(s)')
   })
 
   it('fails when the explanation leaves placeholders unresolved', async () => {
@@ -199,7 +214,7 @@ describe('runEndToEnd: failures are caught and reported', () => {
       calls += 1
       return calls <= 1 ? fakeDetect(chunk) : []
     }
-    const { outcomes } = await runEndToEnd({ ...deps, detectChunk: flaky })
+    const { outcomes } = await runEndToEnd({ ...deps, detectPasses: [flaky] })
     const leakTest = outcomes[10]
     expect(leakTest.detail).toContain('Regex only leaked')
     expect(['pass', 'fail']).toContain(leakTest.status)

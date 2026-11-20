@@ -89,6 +89,27 @@ ${chunk}
 """`
 }
 
+/**
+ * On-device, second detection pass: one narrow job. Small models miss names
+ * that sit inside sentences ("reporting to Varun Tewari") when they are also
+ * looking for numbers, dates and addresses, so this pass asks only for names.
+ */
+export function detectNamesPrompt(chunk: string): string {
+  return `Read the excerpt below and list the name of every person and every named organisation in it.
+
+- People: everyone named anywhere, including inside sentences, greetings, signatures, and after words such as "to", "from", "by", "with", "contact", "reporting to", "son of", "wife", "daughter", "witness" or "Dr.". Give the name as written, without titles such as Mr., Mrs., Ms. or Dr.
+- Organisations: named companies, banks, hospitals, clinics, laboratories, schools, employers, courts, insurers and housing societies.
+- Copy each name exactly as it appears. Use the type PERSON or ORG.
+- Do not list job titles, roles or generic words such as "the tenant", "the bank" or "the doctor".
+
+If there are none, return an empty list.
+
+Excerpt:
+"""
+${chunk}
+"""`
+}
+
 /** In-cloud: the full structured explanation of the redacted document. */
 export function explainPrompt(redactedDocument: string): string {
   return `You are Veil, a careful assistant that explains personal paperwork in plain language.

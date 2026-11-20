@@ -28,15 +28,18 @@ import {
   type Part,
   type SchemaRequest,
 } from 'firebase/ai'
+import { getConfig } from '../config/remote'
+import { isModelProblem } from '../config/settings'
 import { firebaseConfigured, getFirebaseApp, NotConfiguredError } from '../firebase'
 import { recordLedgerEntry, type InferenceSourceName } from '../ledger/store'
-import type { NanoFinding } from '../privacy/detect'
+import type { NanoDetector, NanoFinding } from '../privacy/detect'
 import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import { createDeviceStore } from './deviceStatus'
 import {
   classifyPrompt,
   definePrompt,
+  detectNamesPrompt,
   detectPrompt,
   explainPrompt,
   followUpPrompt,
@@ -56,6 +59,7 @@ import {
   answersSchema,
   classificationSchema,
   detectionSchema,
+  namesSchema,
   explanationSchema,
   parseAnswers,
   parseClassification,
@@ -106,6 +110,11 @@ export const ROUTES = {
     label: 'Detect personal details',
     mode: InferenceMode.ONLY_ON_DEVICE,
     why: 'Detection reads the raw document. It runs on-device only; without Gemini Nano, Veil falls back to regex and says so.',
+  },
+  detectNames: {
+    label: 'Detect names (second pass)',
+    mode: InferenceMode.ONLY_ON_DEVICE,
+    why: 'A second, narrow on-device pass that looks only for people and organisations, which a single broad pass is most likely to miss.',
   },
   explain: {
     label: 'Explain document',
@@ -181,11 +190,14 @@ export const MODE_LABELS: Record<Mode, string> = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Cloud model for explanations and follow-ups. The default matches the
- * Hybrid Inference SDK's own default cloud model; override with
- * VITE_CLOUD_MODEL in .env to use a stronger model.
+ * The cloud model now in use, and where that setting came from. It comes
+ * from Remote Config (model_name), or VITE_CLOUD_MODEL in .env, or the
+ * default in src/config/settings.ts.
  */
-export const CLOUD_MODEL = (import.meta.env.VITE_CLOUD_MODEL as string | undefined) || 'gemini-3.5-flash-lite'
+export function cloudModelInfo(): { model: string; fallback: string; source: string; detectionPasses: number } {
+  const config = getConfig()
+  return { model: config.modelName, fallback: config.fallbackModel, source: config.source, detectionPasses: config.detectionPasses }
+}
 
 /** Longest redacted text given to the on-device quick read, in characters. */
 export const QUICK_READ_MAX_CHARS = 12_000
@@ -318,14 +330,14 @@ interface Request {
 
 const models = new Map<string, GenerativeModel>()
 
-function modelFor(mode: Mode, request: Request): GenerativeModel {
-  const key = [mode, request.schema?.id ?? 'text', request.image ? 'image' : 'text', request.outputLanguage ?? 'en'].join('|')
+function modelFor(mode: Mode, request: Request, cloudModel: string): GenerativeModel {
+  const key = [mode, cloudModel, request.schema?.id ?? 'text', request.image ? 'image' : 'text', request.outputLanguage ?? 'en'].join('|')
   let model = models.get(key)
   if (!model) {
     model = getGenerativeModel(getAi(), {
       mode,
       inCloudParams: {
-        model: CLOUD_MODEL,
+        model: cloudModel,
         generationConfig: request.schema
           ? {
               responseMimeType: 'application/json',
@@ -344,7 +356,11 @@ function modelFor(mode: Mode, request: Request): GenerativeModel {
   return model
 }
 
-async function generate(mode: Mode, request: Request): Promise<{ text: string; source: InferenceSourceName }> {
+async function generate(
+  mode: Mode,
+  request: Request,
+  cloudModel: string = getConfig().modelName,
+): Promise<{ text: string; source: InferenceSourceName }> {
   const parts: Array<string | Part> = request.image
     ? [
         request.prompt,
@@ -352,7 +368,7 @@ async function generate(mode: Mode, request: Request): Promise<{ text: string; s
       ]
     : [request.prompt]
 
-  const result = await modelFor(mode, request).generateContent(parts)
+  const result = await modelFor(mode, request, cloudModel).generateContent(parts)
   const text = result.response.text()
   if (!text.trim()) throw new Error('The model returned an empty answer. Please try again.')
 
@@ -422,17 +438,64 @@ async function run(route: Route, request: Request): Promise<AiResult<string>> {
   const started = performance.now()
   const elapsed = () => Math.round(performance.now() - started)
 
+  const { modelName, fallbackModel } = getConfig()
+
   try {
-    const { text, source } = await generate(mode, request)
+    const { text, source } = await generate(mode, request, modelName)
     recordLedgerEntry({
       ...entryBase,
       source,
       durationMs: elapsed(),
       status: 'ok',
       outbound: source === 'in_cloud' ? request.prompt : null,
+      model: source === 'in_cloud' ? modelName : undefined,
     })
     return { value: text, source, mode, durationMs: elapsed() }
   } catch (error) {
+    // If the attempt went to the cloud and the model itself was the problem
+    // (not available for this project, out of quota, overloaded), try the
+    // fallback model once. The input has already passed the leak guard.
+    const wentToCloud =
+      mode === InferenceMode.ONLY_IN_CLOUD ||
+      mode === InferenceMode.PREFER_IN_CLOUD ||
+      (mode === InferenceMode.PREFER_ON_DEVICE && device.status !== 'ready')
+    if (wentToCloud && modelName !== fallbackModel && isOnline() && isModelProblem(describeError(error))) {
+      recordLedgerEntry({
+        ...entryBase,
+        source: null,
+        durationMs: elapsed(),
+        status: 'error',
+        outbound: null,
+        error: describeError(error),
+        note: `Cloud model ${modelName} failed. Retrying once with ${fallbackModel}; the input is already redacted.`,
+      })
+      const retryStarted = performance.now()
+      try {
+        const { text, source } = await generate(mode, request, fallbackModel)
+        const durationMs = Math.round(performance.now() - retryStarted)
+        recordLedgerEntry({
+          ...entryBase,
+          source,
+          durationMs,
+          status: 'ok',
+          outbound: source === 'in_cloud' ? request.prompt : null,
+          model: source === 'in_cloud' ? fallbackModel : undefined,
+          note: `Answered by the fallback model ${fallbackModel}.`,
+        })
+        return { value: text, source, mode, durationMs }
+      } catch (fallbackError) {
+        recordLedgerEntry({
+          ...entryBase,
+          source: null,
+          durationMs: Math.round(performance.now() - retryStarted),
+          status: 'error',
+          outbound: null,
+          error: describeError(fallbackError),
+        })
+        throw fallbackError
+      }
+    }
+
     // The SDK falls back to the cloud for PREFER_ON_DEVICE only when the
     // on-device model is unavailable, not when it fails mid-call (for
     // example on an unsupported output language). The input has already
@@ -450,7 +513,7 @@ async function run(route: Route, request: Request): Promise<AiResult<string>> {
       })
       const retryStarted = performance.now()
       try {
-        const { text, source } = await generate(InferenceMode.ONLY_IN_CLOUD, request)
+        const { text, source } = await generate(InferenceMode.ONLY_IN_CLOUD, request, modelName)
         const durationMs = Math.round(performance.now() - retryStarted)
         recordLedgerEntry({
           ...entryBase,
@@ -458,6 +521,7 @@ async function run(route: Route, request: Request): Promise<AiResult<string>> {
           durationMs,
           status: 'ok',
           outbound: request.prompt,
+          model: modelName,
           note: 'Cloud fallback after the on-device attempt failed.',
         })
         return { value: text, source, mode, durationMs }
@@ -527,6 +591,26 @@ export async function detectSensitive(chunk: string): Promise<NanoFinding[]> {
     schema: { id: 'detection', value: detectionSchema },
   })
   return parseDetection(result.value)
+}
+
+/**
+ * ONLY_ON_DEVICE. Second, narrow detection pass: only the names of people and
+ * organisations, which the broad pass is most likely to miss.
+ */
+export async function detectNames(chunk: string): Promise<NanoFinding[]> {
+  const result = await run(ROUTES.detectNames, {
+    prompt: detectNamesPrompt(chunk),
+    schema: { id: 'names', value: namesSchema },
+  })
+  return parseDetection(result.value)
+}
+
+/**
+ * The on-device detection passes the app uses. Two passes by default; Remote
+ * Config can switch to one (see src/config/remote.ts).
+ */
+export function detectionPasses(): NanoDetector[] {
+  return getConfig().detectionPasses >= 2 ? [detectSensitive, detectNames] : [detectSensitive]
 }
 
 /** ONLY_IN_CLOUD. Structured explanation of the redacted document. */

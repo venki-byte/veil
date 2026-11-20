@@ -29,6 +29,27 @@ export const detectionSchema = {
   additionalProperties: false,
 } as const
 
+/** The second detection pass returns only people and organisations. */
+export const namesSchema = {
+  type: 'object',
+  properties: {
+    spans: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          type: { type: 'string', enum: ['PERSON', 'ORG'] },
+        },
+        required: ['text', 'type'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['spans'],
+  additionalProperties: false,
+} as const
+
 export const explanationSchema = {
   type: 'object',
   properties: {

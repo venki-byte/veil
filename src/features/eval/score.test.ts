@@ -5,6 +5,7 @@ import { locateAll } from '../../privacy/spans'
 import type { Span } from '../../privacy/types'
 import { normaliseText } from '../ingest/readFile'
 import { EVAL_CORPUS, type EvalDocument, type Planted } from './corpus'
+import { HELDOUT_CORPUS } from './heldout'
 import { formatMs, formatPercent, runEval, scoreDocument, summarise, toMarkdown } from './score'
 
 const spanFor = (text: string, value: string, type: Span['type'] = 'PERSON'): Span[] =>
@@ -144,6 +145,36 @@ describe('the leak test corpus', () => {
   })
 })
 
+describe('the held-out test set', () => {
+  it('has ten documents whose ids do not clash with the development set', () => {
+    expect(HELDOUT_CORPUS).toHaveLength(10)
+    const ids = [...EVAL_CORPUS, ...HELDOUT_CORPUS].map((document) => document.id)
+    expect(new Set(ids).size).toBe(20)
+  })
+
+  it.each(HELDOUT_CORPUS)('$id: every planted detail really appears in the text', (document) => {
+    const text = normaliseText(document.text)
+    expect(document.planted.length).toBeGreaterThanOrEqual(4)
+    for (const detail of document.planted) {
+      for (const form of [detail.value, ...(detail.alsoWrittenAs ?? [])]) {
+        expect(locateAll(text, form).length, form).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it.each(HELDOUT_CORPUS)('$id: is short enough for one on-device call', (document) => {
+    expect(normaliseText(document.text).length).toBeLessThan(1800)
+  })
+
+  it.each(HELDOUT_CORPUS)('$id: a detector that finds every planted detail scores zero leaks', async (document) => {
+    const [row] = await runEval([document], { nano: perfectNano(document.planted), prepare: normaliseText })
+    expect(row.nano?.score.leaked.map((detail) => detail.planted.value)).toEqual([])
+  })
+
+  // Deliberately no assertion on the regex leak rate here: this set is for
+  // measuring only, and no pattern may be tuned to it.
+})
+
 describe('runEval', () => {
   const corpus: EvalDocument[] = [
     { id: 'a', title: 'First', text: 'Asha Verma, asha@mail.example', planted: [{ value: 'Asha Verma', type: 'PERSON' }, { value: 'asha@mail.example', type: 'CONTACT' }] },
@@ -185,6 +216,50 @@ describe('runEval', () => {
     expect(rows[0].nano?.score.leaked.map((detail) => detail.planted.value)).toEqual(['Asha Verma'])
   })
 
+  it('scores one pass and two passes from the same calls', async () => {
+    const calls: string[] = []
+    // Pass 1 finds only the email; pass 2 finds only the names.
+    const broad: NanoDetector = async (chunk) => {
+      calls.push('broad')
+      return chunk.includes('asha@mail.example') ? [{ text: 'asha@mail.example', type: 'CONTACT' }] : []
+    }
+    const names: NanoDetector = async (chunk) => {
+      calls.push('names')
+      return ['Asha Verma', 'Ravi Menon'].filter((name) => chunk.includes(name)).map((text) => ({ text, type: 'PERSON' }))
+    }
+    const rows = await runEval(corpus, { nano: [broad, names] })
+
+    expect(calls).toEqual(['broad', 'names', 'broad', 'names'])
+    expect(rows[0].nano?.score.leaked.map((detail) => detail.planted.value)).toEqual(['Asha Verma'])
+    expect(rows[0].nanoPlus?.score.leaked).toEqual([])
+    expect(rows[1].nano?.score.leaked).toHaveLength(1)
+    expect(rows[1].nanoPlus?.score.leaked).toHaveLength(0)
+  })
+
+  it('times each pass and counts failures per pass', async () => {
+    let clock = 0
+    const rows = await runEval([corpus[0]], {
+      now: () => clock,
+      nano: [
+        async () => {
+          clock += 3000
+          return []
+        },
+        async () => {
+          clock += 1000
+          throw new Error('second pass crashed')
+        },
+      ],
+    })
+    expect(rows[0].nano).toMatchObject({ ms: 3000, failures: 0 })
+    expect(rows[0].nanoPlus).toMatchObject({ ms: 4000, failures: 1 })
+  })
+
+  it('leaves the two-pass column empty with a single detector', async () => {
+    const rows = await runEval(corpus, { nano: async () => [] })
+    expect(rows.every((row) => row.nano !== null && row.nanoPlus === null)).toBe(true)
+  })
+
   it('stops early when aborted', async () => {
     const controller = new AbortController()
     const rows = await runEval(corpus, { signal: controller.signal, onProgress: () => controller.abort() })
@@ -206,9 +281,33 @@ describe('summarise and toMarkdown', () => {
   })
 
   const rows = [
-    { id: 'a', title: 'Lab report', planted: 4, regex: result(2, 1), nano: result(0, 3000) },
-    { id: 'b', title: 'Loan letter', planted: 4, regex: result(1, 3), nano: result(1, 5000) },
+    { id: 'a', title: 'Lab report', planted: 4, regex: result(2, 1), nano: result(0, 3000), nanoPlus: null },
+    { id: 'b', title: 'Loan letter', planted: 4, regex: result(1, 3), nano: result(1, 5000), nanoPlus: null },
   ]
+
+  const twoPassRows = [
+    { ...rows[0], nano: result(1, 3000), nanoPlus: result(0, 5000) },
+    { ...rows[1], nano: result(2, 4000), nanoPlus: result(1, 7000) },
+  ]
+
+  it('summarises the two-pass column separately', () => {
+    const summary = summarise(twoPassRows)
+    expect(summary.nano).toMatchObject({ leaked: 3, msPerDocument: 3500 })
+    expect(summary.nanoPlus).toMatchObject({ leaked: 1, leakRate: 0.125, msPerDocument: 6000 })
+    expect(summarise(rows).nanoPlus).toBeNull()
+  })
+
+  it('writes a Markdown table comparing one pass with two', () => {
+    expect(toMarkdown(twoPassRows)).toBe(
+      [
+        '| Document | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes | Time: 2 passes |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        '| Lab report | 4 | 2 | 1 | 0 | 5.0 s |',
+        '| Loan letter | 4 | 1 | 2 | 1 | 7.0 s |',
+        '| **Total (2 documents)** | **8** | **3 (37.5%)** | **3 (37.5%)** | **1 (12.5%)** | **6.0 s per document** |',
+      ].join('\n'),
+    )
+  })
 
   it('totals leaks and averages time per document', () => {
     const summary = summarise(rows)
