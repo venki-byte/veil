@@ -46,9 +46,21 @@ const EXPLANATION_FIELDS = `Return JSON with these fields:
 - deadlinesAndAmounts: every deadline, date, amount, rate, fee or out-of-range result that matters. Each has a label, the value exactly as written in the document, and a short note.
 - questionsToAsk: 3 to 5 questions the reader could ask the doctor, landlord, lender or official who issued the document.`
 
+/**
+ * Languages the answer can be translated into. Gemini Nano supports only a
+ * few output languages (in testing: de, en, es, fr, ja), so these run in the
+ * cloud on already-redacted text unless the browser's model supports them;
+ * the badge shows which. The first two are listed first in the menu.
+ */
 export const LANGUAGES = {
   hi: { name: 'Hindi', native: 'हिन्दी' },
   ta: { name: 'Tamil', native: 'தமிழ்' },
+  te: { name: 'Telugu', native: 'తెలుగు' },
+  bn: { name: 'Bengali', native: 'বাংলা' },
+  mr: { name: 'Marathi', native: 'मराठी' },
+  kn: { name: 'Kannada', native: 'ಕನ್ನಡ' },
+  ml: { name: 'Malayalam', native: 'മലയാളം' },
+  gu: { name: 'Gujarati', native: 'ગુજરાતી' },
 } as const
 
 export type LanguageCode = keyof typeof LANGUAGES

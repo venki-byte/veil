@@ -42,6 +42,7 @@ const toolButton =
  */
 export function AnswerTools({ session }: { session: Session }) {
   const [term, setTerm] = useState('')
+  const [language, setLanguage] = useState<LanguageCode>('hi')
   const { busy, simple, translations, terms, explanation } = session
   const keyTerms = explanation?.value.keyTerms.slice(0, 6) ?? []
   const pendingTerm = busy.find((key) => key.startsWith('define:'))
@@ -60,18 +61,33 @@ export function AnswerTools({ session }: { session: Session }) {
         <button type="button" className={toolButton} disabled={busy.includes('simplify')} onClick={() => void session.runSimplify()}>
           <Icon name="sparkle" /> {busy.includes('simplify') ? 'Rewriting' : 'Simpler words'}
         </button>
-        {(Object.keys(LANGUAGES) as LanguageCode[]).map((code) => (
-          <button
-            key={code}
-            type="button"
-            className={toolButton}
-            disabled={busy.includes(`translate:${code}`)}
-            onClick={() => void session.runTranslate(code)}
+        <form
+          className="flex items-stretch"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void session.runTranslate(language)
+          }}
+        >
+          <label htmlFor="translate-language" className="sr-only">
+            Language to translate into
+          </label>
+          <select
+            id="translate-language"
+            value={language}
+            onChange={(event) => setLanguage(event.target.value as LanguageCode)}
+            className="rounded-l-lg border border-r-0 border-device-200 bg-white px-2 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-1 focus:ring-device-600"
           >
+            {(Object.keys(LANGUAGES) as LanguageCode[]).map((code) => (
+              <option key={code} value={code}>
+                {LANGUAGES[code].name} ({LANGUAGES[code].native})
+              </option>
+            ))}
+          </select>
+          <button type="submit" className={`${toolButton} rounded-l-none`} disabled={busy.includes(`translate:${language}`)}>
             <Icon name="language" />
-            {busy.includes(`translate:${code}`) ? 'Translating' : `Translate to ${LANGUAGES[code].name}`}
+            {busy.includes(`translate:${language}`) ? 'Translating' : 'Translate'}
           </button>
-        ))}
+        </form>
       </div>
 
       <form
