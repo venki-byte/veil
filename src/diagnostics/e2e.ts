@@ -248,7 +248,7 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
   if (!redacted) {
     skipped('Strict mode', 'the cloud never receives the document', 'no redacted text.')
   } else {
-    await check('Strict mode', 'a finished explanation built from short answers only', async () => {
+    await check('Strict mode', 'a finished explanation built from answers to at least half of the questions', async () => {
       const outcome = await runStrict(redacted, {
         classify: deps.classify,
         plan: (type) => deps.plan(type, registry),
@@ -257,11 +257,13 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
         redact: (value) => registry.redact(value),
       })
       strictOk = true
+      const enough = outcome.facts.length * 2 >= outcome.questions.length
       return {
-        status: outcome.explanation.summary.length > 20 ? 'pass' : 'fail',
+        status: outcome.explanation.summary.length > 20 && enough ? 'pass' : 'fail',
         detail:
           `kind "${outcome.documentType}"; ${outcome.questions.length} questions; ${outcome.facts.length} answered ` +
-          `(${outcome.failedChunks} chunk(s) failed). First answers: ${outcome.facts
+          `(${outcome.retryCalls} one-at-a-time retry call(s); ${outcome.failedChunks} chunk(s) failed)` +
+          `${enough ? '' : '; TOO FEW ANSWERED for a useful explanation'}. First answers: ${outcome.facts
             .slice(0, 3)
             .map((fact) => `"${preview(fact.answer, 50)}"`)
             .join(', ')}`,

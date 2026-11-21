@@ -345,8 +345,13 @@ interface Request {
 
 /** The cloud SDK's own limit per request. Its default is 180 seconds. */
 const CLOUD_TIMEOUT_MS = 60_000
-/** One on-device detection call. Normal calls take 2 to 15 seconds. */
-const DETECTION_TIMEOUT_MS = 45_000
+/**
+ * One on-device detection call. Warm calls take 2 to 15 seconds, but the
+ * first call after page load can take about 40 while the model loads, and a
+ * runaway call once took over five minutes. 90 seconds allows the first and
+ * stops the second.
+ */
+const DETECTION_TIMEOUT_MS = 90_000
 
 /** Overall time limit for a call, unless the request sets its own. */
 function defaultTimeout(mode: Mode): number {

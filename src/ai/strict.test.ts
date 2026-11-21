@@ -12,6 +12,7 @@ import {
   MAX_FACT_CHARS,
   MAX_QUESTION_CHARS,
   MAX_QUESTIONS,
+  MAX_RETRY_CALLS,
   mergeAnswers,
   runStrict,
   StrictModeError,
@@ -167,8 +168,15 @@ describe('parsers for strict mode', () => {
     expect(parseAnswers('{"answers":[{"id":"q1","answer":" Rs. 5 "},{"id":"Q-2","answer":"NOT FOUND"},{"answer":"x"}]}')).toEqual([
       { id: 'Q1', answer: 'Rs. 5' },
       { id: 'Q2', answer: 'NOT FOUND' },
+      { id: 'Q3', answer: 'x' },
     ])
     expect(parseAnswers('{}')).toEqual([])
+  })
+
+  it('turns a bare number into a question id and drops empty answers', () => {
+    expect(parseAnswers('{"answers":[{"id":"2","answer":"Rs. 1,50,000"},{"id":"Q3","answer":"  "}]}')).toEqual([
+      { id: 'Q2', answer: 'Rs. 1,50,000' },
+    ])
   })
 })
 
@@ -187,11 +195,16 @@ describe('runStrict', () => {
     ),
     answer: vi.fn<StrictDeps['answer']>(
       overrides.answer ??
-        (async (chunk) => [
-          { id: 'Q1', answer: chunk.includes('32,000') ? 'Rs. 32,000 per month' : 'NOT FOUND' },
-          { id: 'Q2', answer: chunk.includes('1,50,000') ? 'Rs. 1,50,000' : 'NOT FOUND' },
-          { id: 'Q3', answer: 'NOT FOUND' },
-        ]),
+        (async (chunk, questions) =>
+          questions.map((question) => ({
+            id: question.id,
+            answer:
+              /rent/i.test(question.question) && chunk.includes('32,000')
+                ? 'Rs. 32,000 per month'
+                : /deposit/i.test(question.question) && chunk.includes('1,50,000')
+                  ? 'Rs. 1,50,000'
+                  : 'NOT FOUND',
+          }))),
     ),
     combine: vi.fn<StrictDeps['combine']>(overrides.combine ?? (async () => explanation)),
     redact: overrides.redact ?? ((text: string) => text),
@@ -260,7 +273,8 @@ describe('runStrict', () => {
     expect(steps[0]).toEqual({ step: 'classify' })
     expect(steps.at(-1)).toEqual({ step: 'combine', documentType: 'rental or lease agreement', facts: 2 })
     const answerSteps = steps.filter((step) => step.step === 'answer')
-    expect(answerSteps.at(-1)).toMatchObject({ done: deps.answer.mock.calls.length, total: deps.answer.mock.calls.length })
+    const firstRound = deps.answer.mock.calls.filter(([, questions]) => questions.length > 1).length
+    expect(answerSteps.at(-1)).toMatchObject({ done: firstRound, total: firstRound })
   })
 
   it('keeps going when the on-device model fails on one chunk', async () => {
@@ -275,7 +289,53 @@ describe('runStrict', () => {
     })
     const outcome = await runStrict(document, deps)
     expect(outcome.failedChunks).toBe(1)
-    expect(outcome.facts.map((fact) => fact.id)).toEqual(['Q2'])
+    // A retry with one question attributes a single reply to that question,
+    // so the deposit answer may also be filed under the question that was
+    // re-asked. What matters: the deposit fact is there, and nothing failed hard.
+    expect(outcome.facts.some((fact) => fact.answer === 'Rs. 1,50,000')).toBe(true)
+  })
+
+  it('re-asks unanswered questions one at a time and keeps the new answers', async () => {
+    // First round: the model answers only the first question.
+    const answer = vi.fn<StrictDeps['answer']>(async (_chunk, questions) =>
+      questions.length > 1
+        ? [{ id: 'Q1', answer: 'Rs. 32,000 per month' }]
+        : [{ id: questions[0].id, answer: /deposit/i.test(questions[0].question) ? 'Rs. 1,50,000' : 'NOT FOUND' }],
+    )
+    const outcome = await runStrict(document, build({ answer }))
+
+    expect(outcome.facts.map((fact) => [fact.id, fact.answer])).toEqual([
+      ['Q1', 'Rs. 32,000 per month'],
+      ['Q2', 'Rs. 1,50,000'],
+    ])
+    const single = answer.mock.calls.filter(([, questions]) => questions.length === 1).map(([, questions]) => questions[0].id)
+    expect(single).toContain('Q2')
+    expect(single).toContain('Q3')
+    expect(single).not.toContain('Q1')
+    expect(outcome.retryCalls).toBe(single.length)
+  })
+
+  it('stops re-asking a question once it is answered', async () => {
+    const answer = vi.fn<StrictDeps['answer']>(async (_chunk, questions) =>
+      questions.length > 1 ? [] : [{ id: questions[0].id, answer: 'Found it' }],
+    )
+    const outcome = await runStrict(document, build({ answer, maxChunkChars: 120 }))
+    const single = answer.mock.calls.filter(([, questions]) => questions.length === 1)
+    // Three questions, each answered by the first chunk it is asked about.
+    expect(single).toHaveLength(3)
+    expect(outcome.facts).toHaveLength(3)
+  })
+
+  it('caps the number of retry calls', async () => {
+    const plan = vi.fn<StrictDeps['plan']>(async () => ({
+      questions: Array.from({ length: 10 }, (_, index) => `What is detail number ${index + 1}?`),
+    }))
+    const answer = vi.fn<StrictDeps['answer']>(async (_chunk, questions) =>
+      questions.length > 1 ? [{ id: 'Q1', answer: 'One' }] : [{ id: questions[0].id, answer: 'NOT FOUND' }],
+    )
+    const outcome = await runStrict(document, build({ plan, answer, maxChunkChars: 120 }))
+    expect(outcome.retryCalls).toBe(MAX_RETRY_CALLS)
+    expect(answer.mock.calls.filter(([, questions]) => questions.length === 1)).toHaveLength(MAX_RETRY_CALLS)
   })
 
   it('stops before the second cloud call when nothing could be answered', async () => {

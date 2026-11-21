@@ -197,14 +197,20 @@ export function parseClassification(text: string): string {
   }
 }
 
+/**
+ * Reads the on-device answers to strict mode questions. A small model may
+ * write the id as "Q1", "q1", "1" or leave it out; "1" becomes "Q1", and an
+ * answer with no id takes the id of its position in the list.
+ */
 export function parseAnswers(text: string): Array<{ id: string; answer: string }> {
   const root = asRecord(parseJson(text))
   return asArray(root.answers)
-    .map((item) => ({
-      id: asString(asRecord(item).id).toUpperCase().replace(/[^A-Z0-9]/g, ''),
-      answer: asString(asRecord(item).answer),
-    }))
-    .filter((item) => item.id.length > 0)
+    .map((item, index) => {
+      const raw = asString(asRecord(item).id).toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const id = raw === '' ? `Q${index + 1}` : /^\d+$/.test(raw) ? `Q${Number(raw)}` : raw
+      return { id, answer: asString(asRecord(item).answer) }
+    })
+    .filter((item) => item.answer.length > 0)
 }
 
 export function parseExplanation(text: string): Explanation {

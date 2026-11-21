@@ -136,18 +136,21 @@ narrow questions per chunk instead of one broad one: first every personal detail
 names of people and organisations. This follows the finding that small models do best on
 narrow jobs over short text.
 
-**Second run, both sets, one pass versus two** (Chrome 158 on Windows, Gemini Nano,
-2026-11-20 UTC). The held-out set is the fair estimate:
+**Two runs, both sets, one pass versus two** (Chrome 158 on Windows, Gemini Nano). Gemini
+Nano does not give exactly the same answer every time, so both runs are shown. The held-out
+set is the fair estimate:
 
-| Set | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes |
-| --- | ---: | ---: | ---: | ---: |
-| **Held-out (never tuned on)** | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
-| Development (tuned on) | 70 | 17 (24.3%) | 5 (7.1%) | 1 (1.4%) |
+| Set | Run | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **Held-out (never tuned on)** | 2026-11-20 | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
+| **Held-out (never tuned on)** | 2026-11-21 | 61 | 29 (47.5%) | 10 (16.4%) | **3 (4.9%)** |
+| Development (tuned on) | 2026-11-20 | 70 | 17 (24.3%) | 5 (7.1%) | 1 (1.4%) |
+| Development (tuned on) | 2026-11-21 | 70 | 17 (24.3%) | 1 (1.4%) | 0 (0.0%) |
 
-The second, narrow pass cut the held-out leaks from 7 to 2, at a cost of about 3.4 more
-seconds per document (5.5 s to 8.9 s). The details still visible were a vehicle registration
-number and a flat number on the held-out set, and a house-name address on the development
-set. Per document:
+Across both runs, the second, narrow pass cut held-out leaks by about three quarters (from 7
+and 10 to 2 and 3), at a cost of about 4 more seconds per document. The details still
+visible on the held-out set were a vehicle registration number, a flat number and a first
+name used on its own. Per document, first run:
 
 <details>
 <summary>Held-out set, per document</summary>
@@ -190,7 +193,9 @@ set. Per document:
 On the personal loan letter, one on-device call ran away and wrote until it hit the model's
 output limit, taking 338 seconds; that is what inflates the development-set average. The
 second pass still covered that document, so no detail leaked. Each on-device detection call
-now has a 45-second limit, so a runaway call is stopped and counted as a failure instead.
+now has a 90-second limit, so a runaway call is stopped and counted as a failure instead. In
+the second run no call failed, and the two-pass averages were 10.4 seconds per document on the
+held-out set and 12.7 on the development set.
 
 Be careful how you read these numbers. The development-set figures are likely to be
 optimistic, because patterns were added after seeing which of those details were missed. The
@@ -307,9 +312,10 @@ Config, Hosting), pdf.js for local PDF text extraction, Vitest. There is no cust
   chosen cloud model is unavailable for the project, out of quota or too slow, Veil retries
   once with `gemini-3.8-flash` and records which model answered.
 - **Time limits:** cloud requests use the SDK's per-request `timeout` (60 seconds instead of
-  the default 180), and every call has an overall limit, 45 seconds for an on-device
+  the default 180), and every call has an overall limit, 90 seconds for an on-device
   detection call. In testing, `gemini-4-hydrogen` gave fuller explanations but took about
-  150 seconds or timed out, so it is not the default.
+  150 seconds or timed out, so it is not the default; `gemini-3.5-flash-lite` explained a
+  document in about 5 seconds.
 - App Check with the debug provider on localhost and reCAPTCHA Enterprise when hosted.
 
 ## Research this design draws on
@@ -402,7 +408,7 @@ model.
 
 ## Tests
 
-Everything that does not need a model is plain code with unit tests (414 at the time of
+Everything that does not need a model is plain code with unit tests (418 at the time of
 writing):
 
 - `src/privacy`: overlapping spans, repeated values, the redact/rehydrate round trip, the

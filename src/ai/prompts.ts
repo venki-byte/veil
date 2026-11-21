@@ -223,7 +223,7 @@ ${redactedDocument}
 export function simplifyPrompt(text: string): string {
   return `Rewrite the text below in simpler words, for a reader who finds official language hard.
 - Use short sentences and common words. Keep every fact, number and date.
-- Keep any placeholders in square brackets exactly as written, and do not add new ones.
+- Keep any placeholders in square brackets exactly as written. Never write square brackets for anything else; if a value is not given, say so in words.
 - Do not add advice or new information. Plain text only.
 
 Text:
@@ -236,7 +236,7 @@ ${text}
 export function definePrompt(term: string, context: string): string {
   return `Explain the term "${term}" in two or three short sentences of everyday language, as it is used in the context below.
 - Say what it means in general, then what it refers to here.
-- Keep any placeholders in square brackets exactly as written, and do not add new ones.
+- Keep any placeholders in square brackets exactly as written. Never write square brackets for anything else; if a value is not given, say so in words.
 - Do not give advice. Plain text only.
 
 Context:
@@ -249,7 +249,7 @@ ${context}
 export function translatePrompt(text: string, languageName: string): string {
   return `Translate the text below into ${languageName}.
 - Use natural, everyday ${languageName}.
-- Keep any placeholders in square brackets exactly as written, in Latin letters with the square brackets, and do not add new ones.
+- Keep any placeholders in square brackets exactly as written, in Latin letters with the square brackets. Never write square brackets for anything else.
 - Keep numbers, amounts and dates unchanged.
 - Output only the translation.
 

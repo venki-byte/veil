@@ -42,6 +42,8 @@ export const MAX_QUESTIONS = 10
 export const MAX_QUESTION_CHARS = 200
 /** Longest combined answer to one question that may be sent to the cloud. */
 export const MAX_FACT_CHARS = 300
+/** Most on-device calls spent re-asking unanswered questions one at a time. */
+export const MAX_RETRY_CALLS = 12
 /** How much of the document Gemini Nano reads to name its kind. */
 export const CLASSIFY_EXCERPT_CHARS = 1500
 
@@ -181,6 +183,8 @@ export interface StrictOutcome {
   explanation: Explanation
   /** Chunks Gemini Nano could not answer from. */
   failedChunks: number
+  /** On-device calls spent asking unanswered questions one at a time. */
+  retryCalls: number
 }
 
 /**
@@ -211,7 +215,30 @@ export async function runStrict(redactedDocument: string, deps: StrictDeps): Pro
     deps.onStep?.({ step: 'answer', documentType, questions: questions.length, done: index + 1, total: chunks.length })
   }
 
-  const facts = mergeAnswers(questions, perChunk, deps.redact)
+  // Second round: a small model asked eight questions at once often answers
+  // only a few. Ask each unanswered question on its own, chunk by chunk,
+  // until it is answered or the call budget runs out.
+  let facts = mergeAnswers(questions, perChunk, deps.redact)
+  let retryCalls = 0
+  const unanswered = questions.filter((question) => !facts.some((fact) => fact.id === question.id))
+  for (const question of unanswered) {
+    for (const chunk of chunks) {
+      if (retryCalls >= MAX_RETRY_CALLS) break
+      retryCalls += 1
+      try {
+        const replies = await deps.answer(chunk.text, [question])
+        // Prefer the reply with this question's id. A single reply with
+        // another id still belongs to the only question that was asked.
+        const reply = replies.find((candidate) => candidate.id === question.id) ?? (replies.length === 1 ? replies[0] : undefined)
+        perChunk.push([{ id: question.id, answer: reply?.answer ?? 'NOT FOUND' }])
+        if (reply && !isNotFound(reply.answer)) break
+      } catch {
+        // A failed retry only means this question stays unanswered.
+      }
+    }
+  }
+  if (retryCalls > 0) facts = mergeAnswers(questions, perChunk, deps.redact)
+
   if (facts.length === 0) {
     throw new StrictModeError(
       'Gemini Nano could not answer any of the questions from this document, so there is nothing to explain in strict mode. The standard explanation sends the redacted text instead.',
@@ -221,5 +248,5 @@ export async function runStrict(redactedDocument: string, deps: StrictDeps): Pro
   deps.onStep?.({ step: 'combine', documentType, facts: facts.length })
   const explanation = await deps.combine(documentType, facts)
 
-  return { documentType, questions, facts, explanation, failedChunks }
+  return { documentType, questions, facts, explanation, failedChunks, retryCalls }
 }
