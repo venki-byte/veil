@@ -60,6 +60,8 @@ export interface E2EDeps {
   describeError: (error: unknown) => string
   now?: () => number
   onProgress?: (done: number, total: number, title: string) => void
+  /** Progress inside a long check, such as "document 4 of 10" in the leak test. */
+  onStep?: (text: string) => void
 }
 
 export interface E2EResult {
@@ -288,7 +290,13 @@ export async function runEndToEnd(deps: E2EDeps): Promise<E2EResult> {
   const tables: string[] = []
   const leakTest = (title: string, label: string, corpus: EvalDocument[]) =>
     check(title, 'Gemini Nano leaks no more than regex alone, with no failed calls', async () => {
-      const rows = await runEval(corpus, { nano: deps.detectPasses, prepare: normaliseText, now })
+      deps.onStep?.(`${label.split(' (')[0]}: starting`)
+      const rows = await runEval(corpus, {
+        nano: deps.detectPasses,
+        prepare: normaliseText,
+        now,
+        onProgress: (done, total) => deps.onStep?.(`${label.split(' (')[0]}: ${done} of ${total} documents done`),
+      })
       const summary = summarise(rows)
       tables.push(`${label}\n\n${toMarkdown(rows)}`)
       const best = summary.nanoPlus ?? summary.nano

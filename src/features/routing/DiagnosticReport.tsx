@@ -37,7 +37,7 @@ import { SAMPLES } from '../ingest/samples'
 type Kind = 'quick' | 'full'
 type Phase =
   | { name: 'idle' }
-  | { name: 'running'; kind: Kind; done: number; total: number; title: string }
+  | { name: 'running'; kind: Kind; done: number; total: number; title: string; step?: string }
   | { name: 'done'; copied: boolean | null }
 
 /** The registry the quick report's explanation check uses. Both values are invented. */
@@ -127,6 +127,7 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
 
         describeError,
         onProgress,
+        onStep: (step) => setPhase((now) => (now.name === 'running' ? { ...now, step } : now)),
       })
       outcomes = result.outcomes
       appendix = result.appendix
@@ -226,6 +227,7 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
           </div>
           <p className="mt-1.5 text-xs text-muted">
             Check {Math.min(phase.done + 1, phase.total)} of {phase.total}
+            {phase.step && `. Now: ${phase.step}`}
             {phase.done > 0 && `. Just finished: ${phase.title}`}. Keep this tab open and in front.
           </p>
         </div>
