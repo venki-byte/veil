@@ -10,7 +10,9 @@ Built for #BuildHybridAI 2026 with **Firebase AI Logic** and the **Hybrid Infere
 
 > Veil explains documents. It does not give medical, legal or financial advice.
 
-<!-- TODO before submitting: add the hosted URL and the demo video link here. -->
+**Try it:** https://buildhybrid-6c4e8.web.app (Chrome on desktop; see [Requirements](#requirements))
+
+<!-- TODO before submitting: add the demo video link here. -->
 
 <!-- TODO before submitting: add screenshots here (three-column view, privacy ledger,
      leak test, routing check). Suggested files: docs/screenshot-workspace.png,
@@ -136,19 +138,20 @@ narrow questions per chunk instead of one broad one: first every personal detail
 names of people and organisations. This follows the finding that small models do best on
 narrow jobs over short text.
 
-**Three runs of the held-out set, one pass versus two** (Chrome 158 on Windows, Gemini
-Nano). Gemini Nano does not give exactly the same answer every time, so every run is shown,
-not the best. The held-out set is the fair estimate. The 2026-11-22 run was on the hosted
-site with no failed calls; its development-set run is left out because 7 of its on-device
-calls timed out, which would make the numbers unfair.
+**Runs of both sets, one pass versus two** (Chrome 158 on Windows, Gemini Nano). Gemini
+Nano does not give exactly the same answer every time, so every clean run is shown, not the
+best. The held-out set is the fair estimate. The 2026-11-22 runs were on the hosted site. A
+first hosted attempt that day is left out because its on-device calls stalled and timed out
+(7 failed calls), which would make the numbers unfair; the rerun had no failed calls.
 
 | Set | Run | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **Held-out (never tuned on)** | 2026-11-20 | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
 | **Held-out (never tuned on)** | 2026-11-21 | 61 | 29 (47.5%) | 10 (16.4%) | **3 (4.9%)** |
-| **Held-out (never tuned on)** | 2026-11-22, hosted site | 61 | 29 (47.5%) | 8 (13.1%) | **1 (1.6%)** |
+| **Held-out (never tuned on)** | 2026-11-22, hosted site | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
 | Development (tuned on) | 2026-11-20 | 70 | 17 (24.3%) | 5 (7.1%) | 1 (1.4%) |
 | Development (tuned on) | 2026-11-21 | 70 | 17 (24.3%) | 1 (1.4%) | 0 (0.0%) |
+| Development (tuned on) | 2026-11-22, hosted site | 70 | 17 (24.3%) | 0 (0.0%) | 0 (0.0%) |
 
 Across both runs, the second, narrow pass cut held-out leaks by about three quarters (from 7
 and 10 to 2 and 3), at a cost of about 4 more seconds per document. The details still
