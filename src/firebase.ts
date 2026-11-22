@@ -59,7 +59,9 @@ function setUpAppCheck(firebaseApp: FirebaseApp): AppCheckMode {
     // the browser console once, and reuses it. Register that token in the
     // Firebase console under Security > App Check > Apps > Manage debug tokens.
     // A token can also be supplied through .env.local, which is not committed.
-    const debugToken = (env.VITE_APPCHECK_DEBUG_TOKEN as string | undefined) || true
+    // `import.meta.env.DEV` is false in a production build, so the bundler drops
+    // the .env read and the token can never be shipped inside the hosted app.
+    const debugToken = (import.meta.env.DEV && (env.VITE_APPCHECK_DEBUG_TOKEN as string | undefined)) || true
     ;(globalThis as { FIREBASE_APPCHECK_DEBUG_TOKEN?: string | boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken
     // In debug mode the SDK exchanges the debug token and never asks the
     // provider, so no reCAPTCHA key is needed for local development.

@@ -139,7 +139,7 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
       online: navigator.onLine,
       firebaseConfigured,
       appCheck: firebaseConfigured ? getAppCheckMode() : 'missing',
-      debugTokenInEnv: Boolean(import.meta.env.VITE_APPCHECK_DEBUG_TOKEN),
+      debugTokenInEnv: import.meta.env.DEV && Boolean(import.meta.env.VITE_APPCHECK_DEBUG_TOKEN),
       device: { status: current.status, image: current.image, error: current.error },
       cloudModel: (() => {
         const info = cloudModelInfo()
