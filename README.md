@@ -136,14 +136,17 @@ narrow questions per chunk instead of one broad one: first every personal detail
 names of people and organisations. This follows the finding that small models do best on
 narrow jobs over short text.
 
-**Two runs, both sets, one pass versus two** (Chrome 158 on Windows, Gemini Nano). Gemini
-Nano does not give exactly the same answer every time, so both runs are shown. The held-out
-set is the fair estimate:
+**Three runs of the held-out set, one pass versus two** (Chrome 158 on Windows, Gemini
+Nano). Gemini Nano does not give exactly the same answer every time, so every run is shown,
+not the best. The held-out set is the fair estimate. The 2026-11-22 run was on the hosted
+site with no failed calls; its development-set run is left out because 7 of its on-device
+calls timed out, which would make the numbers unfair.
 
 | Set | Run | Planted details | Leaked: regex only | Leaked: + Gemini Nano, 1 pass | Leaked: + Gemini Nano, 2 passes |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **Held-out (never tuned on)** | 2026-11-20 | 61 | 29 (47.5%) | 7 (11.5%) | **2 (3.3%)** |
 | **Held-out (never tuned on)** | 2026-11-21 | 61 | 29 (47.5%) | 10 (16.4%) | **3 (4.9%)** |
+| **Held-out (never tuned on)** | 2026-11-22, hosted site | 61 | 29 (47.5%) | 8 (13.1%) | **1 (1.6%)** |
 | Development (tuned on) | 2026-11-20 | 70 | 17 (24.3%) | 5 (7.1%) | 1 (1.4%) |
 | Development (tuned on) | 2026-11-21 | 70 | 17 (24.3%) | 1 (1.4%) | 0 (0.0%) |
 
@@ -411,7 +414,7 @@ model.
 
 ## Tests
 
-Everything that does not need a model is plain code with unit tests (418 at the time of
+Everything that does not need a model is plain code with unit tests (429 at the time of
 writing):
 
 - `src/privacy`: overlapping spans, repeated values, the redact/rehydrate round trip, the

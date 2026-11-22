@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, isModelProblem, isValidModelName, parseConfig } from './settings'
+import { DEFAULT_CONFIG, isModelProblem, isTransientNetworkError, isValidModelName, parseConfig } from './settings'
 
 describe('isValidModelName', () => {
   it.each(['gemini-4-hydrogen', 'gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.1-pro-preview'])('accepts %s', (name) => {
@@ -54,6 +54,28 @@ describe('parseConfig', () => {
 
   it('always keeps the fallback model', () => {
     expect(parseConfig({ modelName: 'gemini-4-hydrogen' }).fallbackModel).toBe('gemini-3.8-flash')
+  })
+})
+
+describe('isTransientNetworkError', () => {
+  it.each([
+    'network error',
+    'Failed to fetch',
+    'Failed to parse stream (AI/parse-failed)',
+    'Load failed',
+    'The connection was reset',
+  ])('retries %j', (message) => {
+    expect(isTransientNetworkError(message)).toBe(true)
+  })
+
+  it.each([
+    'App Check token is invalid (403)',
+    '[403 Forbidden] Permission denied',
+    '[404 Not Found] models/x is not found',
+    'The model took longer than 60 seconds and was stopped.',
+    'The model returned an empty answer. Please try again.',
+  ])('does not retry %j', (message) => {
+    expect(isTransientNetworkError(message)).toBe(false)
   })
 })
 

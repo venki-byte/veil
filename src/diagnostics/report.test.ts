@@ -152,6 +152,13 @@ describe('buildReport', () => {
     expect(report.endsWith('APPENDIX\n| a | b |\n| - | - |')).toBe(true)
   })
 
+  it('reports how long the tab was hidden, and explains it when it matters', () => {
+    expect(buildReport(base())).not.toContain('Tab hidden')
+    expect(buildReport(base({ hiddenSeconds: 3.2 }))).toContain('Tab hidden during the run: 3 s')
+    expect(buildReport(base({ hiddenSeconds: 3.2 }))).not.toContain('slows or pauses')
+    expect(buildReport(base({ hiddenSeconds: 240 }))).toContain('Tab hidden during the run: 240 s (Chrome slows or pauses')
+  })
+
   it('says "none" for empty sections and shortens very long text', () => {
     const report = buildReport(base({ ledger: [], checks: [{ title: 't', expected: 'e', status: 'fail', detail: 'x'.repeat(2000), ms: 5 }] }))
     expect(report).toContain('LEDGER (0 calls')

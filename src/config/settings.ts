@@ -80,6 +80,16 @@ export function parseConfig(remote: RawConfig | null, envModel?: string): AppCon
 }
 
 /**
+ * Whether an error looks like a brief connection failure that is worth one
+ * automatic retry (a dropped request, or a streamed reply cut off halfway).
+ * App Check, permission and other client errors are not: a retry fails again.
+ */
+export function isTransientNetworkError(message: string): boolean {
+  if (/app\s?check|permission|\b40[0-4]\b/i.test(message)) return false
+  return /network error|failed to fetch|failed to parse stream|load failed|connection (was )?(reset|closed|lost)/i.test(message)
+}
+
+/**
  * Whether a cloud error looks like a problem with the model itself (not
  * found, not enabled for this project, needs billing, out of quota or
  * overloaded), so that trying the fallback model makes sense. App Check and

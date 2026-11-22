@@ -30,7 +30,7 @@ import {
   type SchemaRequest,
 } from 'firebase/ai'
 import { getConfig } from '../config/remote'
-import { isModelProblem } from '../config/settings'
+import { isModelProblem, isTransientNetworkError } from '../config/settings'
 import { firebaseConfigured, getFirebaseApp, NotConfiguredError } from '../firebase'
 import { recordLedgerEntry, type InferenceSourceName } from '../ledger/store'
 import type { NanoDetector, NanoFinding } from '../privacy/detect'
@@ -386,18 +386,45 @@ function modelFor(mode: Mode, request: Request, cloudModel: string): GenerativeM
   return model
 }
 
-function generate(
+/**
+ * One call with a time limit. When the limit passes, the request is also
+ * cancelled, so a stuck on-device inference does not keep the model busy and
+ * make the next calls wait behind it. A brief connection failure is retried
+ * once for anything that can reach the cloud; the input is already redacted.
+ */
+async function generate(
   mode: Mode,
   request: Request,
   cloudModel: string = getConfig().modelName,
 ): Promise<{ text: string; source: InferenceSourceName }> {
-  return withTimeout(generateOnce(mode, request, cloudModel), request.timeoutMs ?? defaultTimeout(mode))
+  const attempt = async () => {
+    const controller = new AbortController()
+    try {
+      return await withTimeout(
+        generateOnce(mode, request, cloudModel, controller.signal),
+        request.timeoutMs ?? defaultTimeout(mode),
+      )
+    } catch (error) {
+      controller.abort()
+      throw error
+    }
+  }
+
+  try {
+    return await attempt()
+  } catch (error) {
+    if (mode !== InferenceMode.ONLY_ON_DEVICE && isOnline() && isTransientNetworkError(describeError(error))) {
+      return attempt()
+    }
+    throw error
+  }
 }
 
 async function generateOnce(
   mode: Mode,
   request: Request,
   cloudModel: string,
+  signal: AbortSignal,
 ): Promise<{ text: string; source: InferenceSourceName }> {
   const parts: Array<string | Part> = request.image
     ? [
@@ -409,7 +436,11 @@ async function generateOnce(
   const model = modelFor(mode, request, cloudModel)
   let response: EnhancedGenerateContentResponse
   if (request.onText) {
-    const streamed = await model.generateContentStream(parts, { timeout: CLOUD_TIMEOUT_MS })
+    const streamed = await model.generateContentStream(parts, { timeout: CLOUD_TIMEOUT_MS, signal })
+    // If the stream breaks, `response` rejects too. Awaiting it below handles
+    // the normal case; this stops a break from also being reported as an
+    // unhandled rejection in the console.
+    streamed.response.catch(() => undefined)
     let soFar = ''
     for await (const chunk of streamed.stream) {
       let piece = ''
@@ -423,7 +454,7 @@ async function generateOnce(
     }
     response = await streamed.response
   } else {
-    response = (await model.generateContent(parts, { timeout: CLOUD_TIMEOUT_MS })).response
+    response = (await model.generateContent(parts, { timeout: CLOUD_TIMEOUT_MS, signal })).response
   }
   const text = response.text()
   if (!text.trim()) throw new Error('The model returned an empty answer. Please try again.')

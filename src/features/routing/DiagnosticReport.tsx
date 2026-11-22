@@ -70,6 +70,17 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
 
   const run = async (kind: Kind) => {
     setReport('')
+    // Time the tab spends hidden: Chrome slows Gemini Nano in a background tab.
+    let hiddenMs = 0
+    let hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') hiddenSince = Date.now()
+      else if (hiddenSince !== null) {
+        hiddenMs += Date.now() - hiddenSince
+        hiddenSince = null
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     setPhase({ name: 'running', kind, done: 0, total: kind === 'quick' ? 7 : E2E_TOTAL, title: 'Starting' })
     // Use a fresh look at the model: the page may have been open for a while.
     const current = firebaseConfigured ? await refreshDeviceStatus() : getDeviceState()
@@ -133,7 +144,11 @@ export function DiagnosticReport({ device }: { device: DeviceState }) {
       appendix = result.appendix
     }
 
+    document.removeEventListener('visibilitychange', onVisibility)
+    if (hiddenSince !== null) hiddenMs += Date.now() - hiddenSince
+
     const text = buildReport({
+      hiddenSeconds: hiddenMs / 1000,
       generatedAt: new Date(),
       page: window.location.href,
       userAgent: navigator.userAgent,

@@ -43,6 +43,8 @@ export interface ReportInput {
   consoleEntries: ConsoleEntry[]
   /** Extra text to print at the end, such as a results table. */
   appendix?: string
+  /** Seconds the tab was hidden or in the background during the run. Chrome slows Gemini Nano then. */
+  hiddenSeconds?: number
 }
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
@@ -116,6 +118,13 @@ export function buildReport(input: ReportInput): string {
       input.device.error ? `; setup error: ${oneLine(input.device.error, 300)}` : ''
     }`,
     `- Cloud model: ${input.cloudModel}`,
+    ...(input.hiddenSeconds === undefined
+      ? []
+      : [
+          `- Tab hidden during the run: ${Math.round(input.hiddenSeconds)} s${
+            input.hiddenSeconds >= 20 ? ' (Chrome slows or pauses Gemini Nano in a hidden tab, so slow on-device results are expected)' : ''
+          }`,
+        ]),
     '',
     `SUMMARY: ${passed} of ${input.checks.length} checks passed.${
       problems.length ? ` Not passing: ${problems.map((check) => check.title).join('; ')}.` : ''
