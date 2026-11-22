@@ -375,10 +375,11 @@ routing.
 
 ### Deploying
 
-Set `VITE_RECAPTCHA_V3_SITE_KEY` in `.env`. reCAPTCHA v3 is free and needs no billing
-account: create a key for your hosting domain at google.com/recaptcha/admin, then register
-its secret key under App Check in the Firebase console. (`VITE_RECAPTCHA_ENTERPRISE_SITE_KEY`
-also works, but reCAPTCHA Enterprise may require billing.) Then:
+Create a reCAPTCHA key for your hosting domain at google.com/recaptcha/admin (it showed
+"No credit card required" when this project was set up). In the Firebase console, open
+**App Check → Apps → Register → Fraud Defense (formerly reCAPTCHA Enterprise)** and paste
+the site key, then set `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` in `.env`. The classic
+reCAPTCHA option (`VITE_RECAPTCHA_V3_SITE_KEY`) is deprecated in the console. Then:
 
 ```bash
 npm run build
