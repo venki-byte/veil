@@ -1,0 +1,43 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Electricity bill</title><style>
+@page{size:A4;margin:10mm}*{box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;color:#222;margin:0}
+.top{background:#c8102e;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+.top h1{margin:0;font-size:19px}.top small{font-size:9.5px;display:block;margin-top:2px}.top .t{text-align:right;font-size:12px;font-weight:bold}
+.row{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin:10px 0}
+.card{border:1px solid #bbb;padding:8px 10px}.card h3{margin:0 0 5px;font-size:10px;color:#c8102e;text-transform:uppercase;letter-spacing:.5px}
+.card div{display:flex;justify-content:space-between;padding:1.8px 0}.card div span:first-child{color:#555}
+.due{background:#fff4f4;border:2px solid #c8102e;text-align:center;padding:8px}.due b{font-size:24px;color:#c8102e;display:block}
+table{width:100%;border-collapse:collapse;margin-top:4px}th{background:#eee;text-align:left;padding:4px 6px;font-size:9.5px}td{padding:3.5px 6px;border-bottom:1px solid #e5e5e5}td.r,th.r{text-align:right}
+.tot td{font-weight:bold;border-top:2px solid #333;font-size:11.5px}
+.note{margin-top:10px;font-size:9px;color:#444;line-height:1.5;border-top:1px dashed #888;padding-top:6px}
+.stub{margin-top:10px;border-top:2px dashed #666;padding-top:8px;display:flex;justify-content:space-between;font-size:10px}
+.wm{position:fixed;top:50%;left:12%;transform:rotate(-24deg);font-size:64px;color:rgba(0,0,0,.05);font-weight:bold;letter-spacing:6px}
+</style></head><body><div class="wm">SAMPLE</div>
+<div class="top"><div><h1>Kaveri Valley Electricity Board</h1><small>Low Tension Consumer Bill &nbsp;|&nbsp; 24x7 helpline 1912 &nbsp;|&nbsp; www.kveb.example</small></div><div class="t">TAX INVOICE<br>Bill No. 2611-0058391</div></div>
+<div class="row"><div class="card"><h3>Consumer details</h3>
+<div><span>Consumer name</span><b>MRS. PRIYA SUNDARAM</b></div>
+<div><span>Service connection no.</span><b>04-217-0093-1852</b></div>
+<div><span>Tariff / category</span><b>LT-1A Domestic</b></div>
+<div><span>Sanctioned load</span><b>3 kW</b></div>
+<div><span>Service address</span><b style="text-align:right">No. 9, Thendral Illam, Anna Salai Extension,<br>Tiruchirappalli 620 017</b></div>
+<div><span>Mobile (registered)</span><b>+91 97861 33240</b></div>
+<div><span>Email</span><b>priya.sundaram@mailbox.example</b></div></div>
+<div class="due"><div style="display:block;color:#555">Amount payable by due date</div><b>Rs. 1,847.00</b><div style="display:block;margin-top:4px">Due date: <b style="display:inline;font-size:12px">09 Dec 2026</b></div><div style="display:block;color:#555;margin-top:4px;font-size:9.5px">After due date: Rs. 1,897.00</div></div></div>
+<div class="row" style="margin-top:0"><div class="card"><h3>Billing period</h3>
+<div><span>Bill date</span><b>24 Nov 2026</b></div><div><span>Reading period</span><b>20 Sep 2026 - 19 Nov 2026</b></div>
+<div><span>Meter no.</span><b>KV 8820 4471</b></div><div><span>Previous reading (20 Sep)</span><b>14,862</b></div>
+<div><span>Present reading (19 Nov)</span><b>15,311</b></div><div><span>Units consumed</span><b>449 kWh</b></div></div>
+<div class="card"><h3>Payment history</h3><div><span>Last bill (Sep)</span><b>Rs. 1,512.00</b></div><div><span>Paid on</span><b>05 Oct 2026</b></div><div><span>Receipt no.</span><b>RC-77120943</b></div><div><span>Arrears</span><b>Rs. 0.00</b></div><div><span>Security deposit</span><b>Rs. 2,400.00</b></div></div></div>
+<table><tr><th>Charges</th><th class="r">Units / basis</th><th class="r">Rate (Rs.)</th><th class="r">Amount (Rs.)</th></tr>
+<tr><td>Energy charge, slab 1</td><td class="r">100</td><td class="r">0.00</td><td class="r">0.00</td></tr>
+<tr><td>Energy charge, slab 2</td><td class="r">100</td><td class="r">2.35</td><td class="r">235.00</td></tr>
+<tr><td>Energy charge, slab 3</td><td class="r">200</td><td class="r">4.70</td><td class="r">940.00</td></tr>
+<tr><td>Energy charge, slab 4</td><td class="r">49</td><td class="r">6.30</td><td class="r">308.70</td></tr>
+<tr><td>Fixed charge (2 months)</td><td class="r">3 kW</td><td class="r">50.00</td><td class="r">300.00</td></tr>
+<tr><td>Fuel cost adjustment</td><td class="r">449</td><td class="r">0.13</td><td class="r">58.37</td></tr>
+<tr><td>Electricity duty</td><td class="r"></td><td class="r">5%</td><td class="r">4.93</td></tr>
+<tr class="tot"><td colspan="3">Total amount payable</td><td class="r">Rs. 1,847.00</td></tr></table>
+<div class="note"><b>Pay online:</b> kveb.example/pay, UPI id kveb@bank.example, or at any collection counter. Quote service connection no. 04-217-0093-1852. Disconnection notice applies if the bill stays unpaid 15 days after the due date. For billing queries write to Assistant Engineer (Operation), Anna Salai Section Office, Tiruchirappalli 620 017.</div>
+<div class="stub"><div>Consumer: PRIYA SUNDARAM<br>Service connection no.: 04-217-0093-1852</div><div style="text-align:right">Pay by 09 Dec 2026<br><b>Rs. 1,847.00</b></div></div>
+<div class="note" style="text-align:center;border-top:none">Fictional sample made for software testing. All people, places and numbers are invented.</div>
+</body></html>

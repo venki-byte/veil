@@ -303,8 +303,10 @@ export function describeError(error: unknown): string {
     if (/app ?check|appcheck|unauthenticated|401|403/i.test(message)) {
       return `The cloud refused the request. This usually means App Check is not set up for this site yet (register the debug token in the Firebase console under Security, App Check, Apps, Manage debug tokens). Details: ${message}`
     }
-    if (/429|quota|rate/i.test(message)) {
-      return 'The cloud model is rate-limited right now. Wait a minute and try again.'
+    // Match real rate-limit wording only. A bare "rate" also matches "generateContent",
+    // which appears in almost every SDK error and hid the true cause.
+    if (/\b429\b|quota|rate[\s_-]?limit|resource[\s_-]?exhausted|too many requests/i.test(message)) {
+      return `The cloud model is rate-limited right now. Wait a minute and try again. Details: ${message}`
     }
     return message
   }
