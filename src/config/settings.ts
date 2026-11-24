@@ -97,7 +97,7 @@ export function isTransientNetworkError(message: string): boolean {
  */
 export function isModelProblem(message: string): boolean {
   if (/app\s?check|offline|failed to fetch|network/i.test(message)) return false
-  return /\b(404|429|503|504)\b|not found|not supported|unsupported model|billing|quota|resource.?exhausted|overloaded|unavailable|is not available|permission.*model|model.*permission|timeout|timed out|took longer than|deadline/i.test(
+  return /\b(404|429|500|502|503|504)\b|high demand|experiencing|internal error|not found|not supported|unsupported model|billing|quota|resource.?exhausted|overloaded|unavailable|is not available|permission.*model|model.*permission|timeout|timed out|took longer than|deadline/i.test(
     message,
   )
 }

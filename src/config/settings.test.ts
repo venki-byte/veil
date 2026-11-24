@@ -86,6 +86,7 @@ describe('isModelProblem', () => {
     'This model requires billing to be enabled.',
     '[503 Service Unavailable] The model is overloaded. Please try again later.',
     'The model gemini-4-hydrogen is not supported for generateContent.',
+    'Error fetching from https://firebasevertexai.googleapis.com/v1beta/projects/p/models/gemini-3.5-flash-lite:generateContent: [500 ] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
     'Timeout has expired.',
     'The model took longer than 60 seconds and was stopped.',
     '[504 Gateway Timeout] Deadline exceeded.',
