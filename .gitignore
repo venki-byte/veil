@@ -12,6 +12,8 @@ firebase-debug.log
 .DS_Store
 .vscode/
 .idea/
-# The private build plan is not part of the product
+# The private build plan and developer notes are not part of the product
 \#BuildHybridAI*.pdf
 PLAN.md
+readme_ai.txt
+
