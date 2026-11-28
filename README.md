@@ -1,5 +1,8 @@
 # Veil
 
+[![CI](https://github.com/venki-byte/veil/actions/workflows/ci.yml/badge.svg)](https://github.com/venki-byte/veil/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 **Understand the paperwork. Keep the personal details.**
 
 Veil is a Chrome web app that explains sensitive paperwork (lab reports, rental and loan
@@ -332,17 +335,15 @@ Config, Hosting), pdf.js for local PDF text extraction, Vitest. There is no cust
 
 ## Research this design draws on
 
-<!-- TODO before submitting: link each paper. -->
-
-- **PAAC: Privacy-Aware Agentic Device-Cloud Collaboration.** The device masks sensitive
+- **[PAAC: Privacy-Aware Agentic Device-Cloud Collaboration](https://arxiv.org/abs/2605.08646)**. The device masks sensitive
   spans, the cloud reasons over typed placeholders, and a deterministic on-device registry
   does all substitution and reversal. This is Veil's core pipeline.
-- **Minions: Cost-efficient Collaboration Between On-device and Cloud Language Models
-  (ICML 2025).** Small on-device models do well on narrow jobs over short chunks, and a
+- **[Minions: Cost-efficient Collaboration Between On-device and Cloud Language Models](https://arxiv.org/abs/2502.15964)
+  (ICML 2025)**. Small on-device models do well on narrow jobs over short chunks, and a
   cloud model that splits work into local subtasks recovers most of the quality. This is
   the basis for chunked detection and for strict mode.
-- **Bridging On-Device and Cloud LLMs for Collaborative Reasoning (ICML 2026)** and
-  **Large Language Models over Networks.** Route by data sensitivity and connectivity, not
+- **[Bridging On-Device and Cloud LLMs for Collaborative Reasoning](https://arxiv.org/abs/2409.13063)** and
+  **[Large Language Models over Networks](https://arxiv.org/abs/2406.13629)**. Route by data sensitivity and connectivity, not
   only by model availability.
 
 Nothing is trained or fine-tuned. These ideas are applied through prompts, schemas and
