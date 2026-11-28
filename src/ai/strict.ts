@@ -33,6 +33,14 @@ export const DOCUMENT_TYPES = [
   'employment letter or contract',
   'legal notice or court document',
   'bill or invoice',
+  'sale deed or property document',
+  'vehicle document',
+  'will or inheritance document',
+  'power of attorney or authorisation letter',
+  'family court order or legal settlement',
+  'school or university certificate or transcript',
+  'identity or government document',
+  'non-disclosure or business agreement',
   'other document',
 ] as const
 

@@ -98,3 +98,36 @@ export function planBands(ink: number[], width: number, height: number, maxBands
   bounds.push(height)
   return bounds
 }
+
+/** Highest share of dark pixels a row may have and still count as a gap between lines. */
+const CLEAN_GAP_INK = 0.006
+/** How far two neighbouring bands overlap when the cut could not avoid text, as a share of page height. */
+const OVERLAP_SHARE = 0.06
+
+export interface BandRange {
+  top: number
+  bottom: number
+}
+
+/**
+ * Turns band boundaries into row ranges. A cut that falls in a clean blank
+ * gap is used as it is. If every row near the ideal cut has ink, the page is
+ * probably tilted (text lines run across the rows), so any cut would slice
+ * through a line. Then the two bands overlap by a few percent, and a line that
+ * is cut in one band is whole in the other. The same line may be read twice,
+ * which is harmless; losing half a line is not.
+ */
+export function bandRanges(ink: number[], width: number, height: number, maxBands = MAX_BANDS): BandRange[] {
+  const bounds = planBands(ink, width, height, maxBands)
+  const overlap = Math.round(height * OVERLAP_SHARE)
+  const ranges: BandRange[] = []
+  for (let part = 0; part + 1 < bounds.length; part += 1) {
+    const cutAbove = part > 0 && ink[bounds[part]] > CLEAN_GAP_INK
+    const cutBelow = part + 2 < bounds.length && ink[bounds[part + 1]] > CLEAN_GAP_INK
+    ranges.push({
+      top: cutAbove ? Math.max(0, bounds[part] - overlap) : bounds[part],
+      bottom: cutBelow ? Math.min(height, bounds[part + 1] + overlap) : bounds[part + 1],
+    })
+  }
+  return ranges
+}

@@ -117,6 +117,30 @@ describe('detectWithRegex: postal codes on their own', () => {
   })
 })
 
+describe('detectWithRegex: other countries', () => {
+  const found = (text: string) => detectWithRegex(text).map((span) => span.text)
+
+  it('hides a US street address ending in a state and ZIP code', () => {
+    expect(found('Property: 123 Main St, Springfield, IL 62701.')).toContain('123 Main St, Springfield, IL 62701')
+    expect(found('Mail to 88 Oak Avenue, Apt 4, Austin TX 78701-1234')).toContain('88 Oak Avenue, Apt 4, Austin TX 78701-1234')
+  })
+
+  it('hides a UK postcode', () => {
+    expect(found('The flat at 10 Downing Street, London SW1A 2AA is let')).toContain('SW1A 2AA')
+    expect(found('Office: M1 1AE')).toContain('M1 1AE')
+  })
+
+  it('hides IBANs and UK National Insurance numbers', () => {
+    expect(found('IBAN GB82 WEST 1234 5698 7654 32 for payment')).toContain('GB82 WEST 1234 5698 7654 32')
+    expect(found('NI number AB 12 34 56 C')).toContain('AB 12 34 56 C')
+  })
+
+  it('leaves ordinary text and numbers alone', () => {
+    expect(found('Section 12 of the Act applies in the 2026 season')).toEqual([])
+    expect(found('Page 5 of 10, item 3A, grade A1')).toEqual([])
+  })
+})
+
 describe('detectWithRegex: what must stay visible', () => {
   it('leaves amounts alone', () => {
     expect(values('Loan of Rs. 62,00,000 at 8.85% with EMI Rs. 55,180')).toEqual([])

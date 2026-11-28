@@ -54,6 +54,38 @@ describe('chunkText', () => {
     }
   })
 
+  it('can repeat the end of the previous chunk so a name on the border is seen whole', () => {
+    const text = 'Meenakshi Raghavan lives at Lake View Road Indiranagar Bengaluru. '.repeat(12)
+    const chunks = chunkText(text, 200, 60)
+    expect(chunks.length).toBeGreaterThan(2)
+    for (let index = 1; index < chunks.length; index += 1) {
+      const previousEnd = chunks[index - 1].start + chunks[index - 1].text.length
+      // Each chunk begins before the previous one ends, but not by more than the overlap.
+      expect(chunks[index].start).toBeLessThan(previousEnd)
+      expect(previousEnd - chunks[index].start).toBeLessThanOrEqual(60 + 1)
+      // Offsets stay correct, and a chunk never starts in the middle of a word.
+      expect(text.slice(chunks[index].start, chunks[index].start + chunks[index].text.length)).toBe(chunks[index].text)
+      expect(text[chunks[index].start - 1]).toMatch(/\s/)
+    }
+    // The text is still fully covered.
+    expect(chunks[chunks.length - 1].start + chunks[chunks.length - 1].text.length).toBe(text.length)
+  })
+
+  it('finds a name split across a cut when overlap is on', () => {
+    const filler = 'word '.repeat(38).trim()
+    const text = `${filler}\nRamesh\nSharma ${filler}`
+    const plain = chunkText(text, 200)
+    const overlapped = chunkText(text, 200, 80)
+    expect(plain.some((chunk) => chunk.text.includes('Ramesh\nSharma'))).toBe(false)
+    expect(overlapped.some((chunk) => chunk.text.includes('Ramesh\nSharma'))).toBe(true)
+  })
+
+  it('has no overlap unless asked', () => {
+    const text = 'sentence number one. '.repeat(100)
+    const chunks = chunkText(text, 200)
+    expect(chunks.map((chunk) => chunk.text).join('')).toBe(text)
+  })
+
   it('rejects an unusably small chunk size', () => {
     expect(() => chunkText('text', 10)).toThrow()
   })

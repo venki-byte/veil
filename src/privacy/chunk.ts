@@ -50,7 +50,16 @@ function findCut(text: string, limit: number): number {
   return limit // no boundary found: hard cut
 }
 
-export function chunkText(text: string, maxChars: number = DEFAULT_CHUNK_CHARS): Chunk[] {
+/** How far back a chunk reaches into the previous one, so a name on the border is seen whole. */
+export const DETECTION_OVERLAP_CHARS = 150
+
+/**
+ * Splits text into chunks. With `overlapChars` above zero, every chunk after
+ * the first also repeats the end of the one before it (starting at a word
+ * boundary), so a name or address that falls across a cut appears whole in at
+ * least one chunk. Offsets stay correct. The default is no overlap.
+ */
+export function chunkText(text: string, maxChars: number = DEFAULT_CHUNK_CHARS, overlapChars = 0): Chunk[] {
   if (maxChars < 50) throw new Error('maxChars must be at least 50')
 
   const chunks: Chunk[] = []
@@ -61,7 +70,15 @@ export function chunkText(text: string, maxChars: number = DEFAULT_CHUNK_CHARS):
     const size = rest.length <= maxChars ? rest.length : findCut(rest, maxChars)
     const piece = rest.slice(0, size)
     if (piece.trim().length > 0) {
-      chunks.push({ start: offset, text: piece })
+      let start = offset
+      if (overlapChars > 0 && offset > 0) {
+        const floor = Math.max(0, offset - overlapChars)
+        const gap = text.slice(floor, offset).search(/\s/)
+        // Begin just after the first space in the overlap window, never in the middle of a word.
+        start = gap >= 0 ? floor + gap + 1 : offset
+        if (start > offset) start = offset
+      }
+      chunks.push({ start, text: text.slice(start, offset + piece.length) })
     }
     offset += size
   }

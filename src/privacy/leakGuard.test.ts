@@ -58,6 +58,15 @@ describe('leak guard', () => {
     }
   })
 
+  it('does not join digits from different numbers in the text', () => {
+    const registry = new Registry()
+    registry.add('9876543210', 'CONTACT', 'regex')
+    // "98765" and "43210" are separate amounts on separate lines, not one phone number.
+    expect(findLeaks('Fee Rs. 98765\nPaid 43210 on the due date', registry)).toEqual([])
+    expect(findLeaks('Rows: 98765, 43210', registry)).toEqual([])
+    expect(findLeaks('Call 98765 43210 today', registry)).toHaveLength(1)
+  })
+
   it('catches a long value glued to other characters', () => {
     const registry = build()
     expect(findLeaks('idAsha Vermaxyz', registry)).toHaveLength(1)

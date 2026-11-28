@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planBands, rowInk, stretchContrast, toGray } from './imageBands'
+import { bandRanges, planBands, rowInk, stretchContrast, toGray } from './imageBands'
 
 /** A page: light paper with dark "text" rows at the given row numbers. */
 function page(width: number, height: number, textRows: number[], paper = 200, ink = 40): Uint8ClampedArray {
@@ -44,6 +44,33 @@ describe('rowInk', () => {
     const ink = rowInk(page(100, 10, [3]), 100, 10)
     expect(ink[3]).toBeCloseTo(0.9, 1)
     expect(ink[0]).toBe(0)
+  })
+})
+
+describe('bandRanges', () => {
+  it('uses clean cuts as they are when the page has a blank gap', () => {
+    const textRows: number[] = []
+    for (let row = 560; row < 760; row += 1) if (row < 668 || row > 676) textRows.push(row)
+    const ink = rowInk(page(960, 1280, textRows), 960, 1280)
+    const [first, second] = bandRanges(ink, 960, 1280)
+    expect(first.bottom).toBe(second.top)
+  })
+
+  it('overlaps the bands when text runs across every row, as on a tilted photo', () => {
+    // Ink on every row near the middle: any cut would slice through a line.
+    const rows = Array.from({ length: 1280 }, (_, row) => row)
+    const ink = rowInk(page(960, 1280, rows), 960, 1280)
+    const [first, second] = bandRanges(ink, 960, 1280)
+    expect(first.bottom).toBeGreaterThan(second.top)
+    expect(first.top).toBe(0)
+    expect(second.bottom).toBe(1280)
+    // Together the bands still cover the whole page.
+    expect(first.top).toBe(0)
+    expect(second.top).toBeLessThan(first.bottom)
+  })
+
+  it('returns one range for a page that is read whole', () => {
+    expect(bandRanges(new Array(500).fill(0), 900, 500)).toEqual([{ top: 0, bottom: 500 }])
   })
 })
 

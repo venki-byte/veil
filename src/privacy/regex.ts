@@ -42,6 +42,10 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g
 const SHAPED: Array<{ pattern: RegExp; type: SensitiveType }> = [
   // US Social Security number
   { pattern: /(?<![\w-])\d{3}-\d{2}-\d{4}(?![\w-])/g, type: 'ID' },
+  // IBAN, with or without the usual groups of four: GB82 WEST 1234 5698 7654 32
+  { pattern: /(?<![A-Za-z0-9])[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?(?![A-Za-z0-9])/g, type: 'ACCOUNT' },
+  // UK National Insurance number: AB 12 34 56 C
+  { pattern: /(?<![A-Za-z0-9])[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?\d{2} ?\d{2} ?\d{2} ?[A-D](?![A-Za-z0-9])/g, type: 'ID' },
   // India GSTIN
   { pattern: /\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]\b/g, type: 'ID' },
   // India PAN
@@ -139,6 +143,16 @@ const ADDRESS_WITH_PIN = new RegExp(
 const POSTAL_CODE_CUE = /\b(?:pin(?:[ -]?code)?|postal[ -]code|zip(?:[ -]?code)?)\b[^\w\n]{0,4}([1-9]\d{2} ?\d{3})(?!\d)/gi
 /** A spaced PIN code (three digits, space, three digits) right after a place name. */
 const POSTAL_CODE_AFTER_PLACE = /(?<![\p{L}\p{N}])\p{Lu}\p{L}{3,}[ \t,-]{1,3}([1-9]\d{2} \d{3})(?![\d])/gu
+
+/**
+ * A US-style street address ending in a state and ZIP code:
+ * "123 Main St, Springfield, IL 62701" or "88 Oak Avenue, Apt 4, Austin TX 78701-1234".
+ */
+const ADDRESS_US =
+  /(?<![\p{L}\p{N}])\d{1,6}[ \t]+[\p{L}0-9.'#-]+(?:[ \t]+[\p{L}0-9.'#-]+){0,5}(?:,[ \t]*[^\n,;:|()]{1,30}){0,2},?[ \t]+[A-Z]{2}[ \t]+\d{5}(?:-\d{4})?(?!\d)/gu
+
+/** A UK postcode: SW1A 1AA, M1 1AE, EC1A 1BB. */
+const UK_POSTCODE = /(?<![A-Za-z0-9])[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}(?![A-Za-z0-9])/g
 
 /** Capitalised words ending in a company legal suffix. */
 const COMPANY_NAME =
@@ -341,6 +355,11 @@ export function detectWithRegex(text: string): Span[] {
   // 8. Addresses with no label, recognised by their shape: a house or flat
   //    number, a few comma-separated parts, and a city followed by a PIN code.
   for (const match of text.matchAll(ADDRESS_WITH_PIN)) claimAddress(match.index, match[0])
+
+  // 8a. Addresses in other countries' usual shapes: a US street address ending in
+  //     a state and ZIP code, and a UK postcode.
+  for (const match of text.matchAll(ADDRESS_US)) claimAddress(match.index, match[0])
+  for (const match of text.matchAll(UK_POSTCODE)) claim(match.index, match[0], 'ADDRESS')
 
   // 8b. A postal code on its own, when the text marks it as one: after "PIN",
   //     "pincode", "postal code" or "ZIP", or in the usual spaced form right

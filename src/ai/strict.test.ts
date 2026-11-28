@@ -30,6 +30,14 @@ const explanation: Explanation = {
 }
 
 describe('cleanDocumentType', () => {
+  it('covers wills, powers of attorney, deeds, certificates and agreements, not only the first few kinds', () => {
+    for (const label of ['will or inheritance document', 'power of attorney or authorisation letter', 'sale deed or property document', 'school or university certificate or transcript', 'non-disclosure or business agreement']) {
+      expect(cleanDocumentType(label)).toBe(label)
+    }
+    expect(new Set(DOCUMENT_TYPES).size).toBe(DOCUMENT_TYPES.length)
+    expect(DOCUMENT_TYPES.at(-1)).toBe('other document')
+  })
+
   it('accepts exactly the fixed labels, ignoring case and outer spaces', () => {
     expect(cleanDocumentType('loan document')).toBe('loan document')
     expect(cleanDocumentType('  Rental or Lease Agreement ')).toBe('rental or lease agreement')

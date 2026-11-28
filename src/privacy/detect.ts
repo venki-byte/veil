@@ -7,7 +7,7 @@
  * fake. If no detector is given, detection is regex-only.
  */
 
-import { chunkText, DEFAULT_CHUNK_CHARS, type Chunk } from './chunk'
+import { chunkText, DEFAULT_CHUNK_CHARS, DETECTION_OVERLAP_CHARS, type Chunk } from './chunk'
 import { detectWithRegex, hasBirthCueBefore } from './regex'
 import { locateAll, mergeSpans } from './spans'
 import { isSensitiveType, type SensitiveType, type Span } from './types'
@@ -144,7 +144,7 @@ export async function detectDocument(text: string, options: DetectOptions = {}):
     }
   }
 
-  const chunks = chunkText(text, options.maxChunkChars ?? DEFAULT_CHUNK_CHARS)
+  const chunks = chunkText(text, options.maxChunkChars ?? DEFAULT_CHUNK_CHARS, DETECTION_OVERLAP_CHARS)
   const passSpans: Span[][] = passes.map(() => [])
   const passMs: number[] = passes.map(() => 0)
   const passFailures: number[] = passes.map(() => 0)

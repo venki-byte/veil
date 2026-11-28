@@ -7,7 +7,7 @@
  *     (see transcribeImage in src/ai/hybrid.ts). The image is never uploaded.
  */
 
-import { planBands, rowInk, stretchContrast, toGray } from './imageBands'
+import { bandRanges, rowInk, stretchContrast, toGray } from './imageBands'
 
 export const MAX_DOCUMENT_CHARS = 80_000
 
@@ -144,11 +144,9 @@ export async function prepareImage(file: File): Promise<Blob[]> {
     }
     context.putImageData(pixels, 0, 0)
 
-    const bounds = planBands(rowInk(gray, width, height), width, height)
     const bands: Blob[] = []
-    for (let part = 0; part + 1 < bounds.length; part += 1) {
-      const top = bounds[part]
-      const bandHeight = bounds[part + 1] - top
+    for (const { top, bottom } of bandRanges(rowInk(gray, width, height), width, height)) {
+      const bandHeight = bottom - top
       const slice = document.createElement('canvas')
       slice.width = width
       slice.height = bandHeight

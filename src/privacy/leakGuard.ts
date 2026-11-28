@@ -35,6 +35,17 @@ const collapse = (value: string) => value.replace(/\s+/g, ' ').toLowerCase()
 const compact = (value: string) => value.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase()
 const digitsIn = (value: string) => value.replace(/\D/g, '').length
 
+/**
+ * Matches a value's letters and digits in order, allowing a short run of
+ * spaces, dots, hyphens or slashes between any two of them. Unlike stripping
+ * every non-alphanumeric character from the whole text, this cannot join the
+ * end of one number to the start of the next.
+ */
+function regroupedPattern(value: string): RegExp {
+  const characters = [...compact(value)].map((char) => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(characters.join('[ \\t./-]{0,2}'), 'iu')
+}
+
 function excerptAround(text: string, index: number, length: number): string {
   const start = Math.max(0, index - 24)
   const end = Math.min(text.length, index + length + 24)
@@ -48,7 +59,6 @@ function excerptAround(text: string, index: number, length: number): string {
 export function findLeaks(outbound: string, registry: Registry): Leak[] {
   const leaks: Leak[] = []
   const collapsed = collapse(outbound)
-  const compacted = compact(outbound)
 
   for (const entry of registry.active()) {
     const base = { placeholder: entry.placeholder, type: entry.type }
@@ -70,10 +80,10 @@ export function findLeaks(outbound: string, registry: Registry): Leak[] {
 
     // 2. Long numbers with their digits regrouped: "9876 543 210",
     //    "9876-543-210" and "9876543210" are the same number.
+    //    Only spaces, dots, hyphens and slashes may sit between the characters,
+    //    so digits from two different numbers in the text are never joined.
     if (digitsIn(entry.value) >= 8) {
-      const compactNeedle = compact(entry.value)
-      const compactIndex = compacted.indexOf(compactNeedle)
-      if (compactIndex >= 0) {
+      if (regroupedPattern(entry.value).test(outbound)) {
         leaks.push({ ...base, via: 'digits', excerpt: `${entry.type} number with different spacing` })
         continue
       }
