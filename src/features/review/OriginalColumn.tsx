@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { countUnreadable } from '../../ai/transcript'
 import { Icon } from '../../components/Icon'
 import { REDACT_TYPES, TYPE_LABELS, type SensitiveType } from '../../privacy/types'
 import type { Session } from '../session/useSession'
@@ -31,6 +32,8 @@ export function OriginalColumn({ session }: { session: Session }) {
 
   if (!doc) return null
 
+  const unreadable = doc.kind === 'photo' ? countUnreadable(doc.text) : 0
+
   const readSelection = () => {
     const current = window.getSelection()
     const text = current?.toString().replace(/\s+/g, ' ').trim() ?? ''
@@ -54,8 +57,14 @@ export function OriginalColumn({ session }: { session: Session }) {
             <img src={doc.imageUrl} alt="The photo you opened" className="max-h-56 w-full object-contain" />
             <figcaption className="flex items-center gap-1.5 border-t border-line px-3 py-1.5 text-xs text-muted">
               <Icon name="lock" size={12} /> This photo was read by Gemini Nano on this device and was never uploaded.
-              Photo reading is in beta: check the text below against the page.
+              Photo reading is in beta: check the text below against the page, especially names, numbers and dates.
             </figcaption>
+            {unreadable > 0 && (
+              <p role="status" className="border-t border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+                {unreadable === 1 ? 'One place' : `${unreadable} places`} could not be read and are marked [unreadable]. A
+                closer, brighter, straight-on photo reads better. To hide extra text, select it below.
+              </p>
+            )}
           </figure>
         )}
         <div

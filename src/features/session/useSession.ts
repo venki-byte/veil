@@ -25,7 +25,7 @@ import {
   refreshDeviceStatus,
   ROUTES,
   simplify,
-  transcribeImage,
+  transcribeBands,
   translate,
   type AiResult,
 } from '../../ai/hybrid'
@@ -251,11 +251,16 @@ export function useSession() {
           await loadDocument({ text, name: file.name, kind })
         } else if (kind === 'photo') {
           setReadingLabel('Gemini Nano is reading the photo on this device')
-          const image = await prepareImage(file)
-          const result = await transcribeImage(image)
+          const bands = await prepareImage(file)
+          const result = await transcribeBands(bands, (index, total) => {
+            if (run === runId.current && total > 1) {
+              setReadingLabel(`Gemini Nano is reading the photo on this device (part ${index} of ${total})`)
+            }
+          })
           if (run !== runId.current) return
           releaseImage()
-          imageUrl.current = URL.createObjectURL(image)
+          // The thumbnail is the photo as it was opened, not the contrast-adjusted copy.
+          imageUrl.current = URL.createObjectURL(file)
           await loadDocument({
             text: result.value,
             name: file.name,

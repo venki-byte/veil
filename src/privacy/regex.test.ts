@@ -96,6 +96,27 @@ describe('detectWithRegex: dates', () => {
   })
 })
 
+describe('detectWithRegex: postal codes on their own', () => {
+  const found = (text: string) => detectWithRegex(text).map((span) => span.text)
+
+  it('hides a PIN code after a place name', () => {
+    expect(found('Tiruchirappalli 620 017')).toEqual(['620 017'])
+    expect(found('Service address No. 9, Lake Road, Madurai 625 002 ')).toContain('625 002')
+  })
+
+  it('hides a PIN code after a label, even without a space', () => {
+    expect(found('Pincode: 641018')).toEqual(['641018'])
+    expect(found('PIN 560 038')).toEqual(['560 038'])
+    expect(found('ZIP code - 500084')).toEqual(['500084'])
+  })
+
+  it('does not hide amounts or other six-digit numbers', () => {
+    expect(found('Total 125000 due')).toEqual([])
+    expect(found('Platelets 150000')).toEqual([])
+    expect(found('Balance Rs 100000')).toEqual([])
+  })
+})
+
 describe('detectWithRegex: what must stay visible', () => {
   it('leaves amounts alone', () => {
     expect(values('Loan of Rs. 62,00,000 at 8.85% with EMI Rs. 55,180')).toEqual([])

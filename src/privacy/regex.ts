@@ -135,6 +135,11 @@ const ADDRESS_WITH_PIN = new RegExp(
   'gu',
 )
 
+/** A six-digit Indian PIN code after a label such as "PIN", "Pincode" or "ZIP". */
+const POSTAL_CODE_CUE = /\b(?:pin(?:[ -]?code)?|postal[ -]code|zip(?:[ -]?code)?)\b[^\w\n]{0,4}([1-9]\d{2} ?\d{3})(?!\d)/gi
+/** A spaced PIN code (three digits, space, three digits) right after a place name. */
+const POSTAL_CODE_AFTER_PLACE = /(?<![\p{L}\p{N}])\p{Lu}\p{L}{3,}[ \t,-]{1,3}([1-9]\d{2} \d{3})(?![\d])/gu
+
 /** Capitalised words ending in a company legal suffix. */
 const COMPANY_NAME =
   /(?<![\p{L}\p{N}])(?:\p{Lu}[\p{L}&'.-]*[ \t]+){1,6}(?:Private[ \t]+Limited|PRIVATE[ \t]+LIMITED|Pvt\.?[ \t]+Ltd\.?|PVT\.?[ \t]+LTD\.?|Limited|LIMITED|Ltd\.?|LTD\.?|LLP|LLC|Inc\.?|INC\.?|Incorporated|Corporation|CORPORATION|Corp\.?)(?![\p{L}])/gu
@@ -336,6 +341,16 @@ export function detectWithRegex(text: string): Span[] {
   // 8. Addresses with no label, recognised by their shape: a house or flat
   //    number, a few comma-separated parts, and a city followed by a PIN code.
   for (const match of text.matchAll(ADDRESS_WITH_PIN)) claimAddress(match.index, match[0])
+
+  // 8b. A postal code on its own, when the text marks it as one: after "PIN",
+  //     "pincode", "postal code" or "ZIP", or in the usual spaced form right
+  //     after a place name ("Tiruchirappalli 620 017"). A bare six-digit number
+  //     is not enough: it could be an amount.
+  for (const pattern of [POSTAL_CODE_CUE, POSTAL_CODE_AFTER_PLACE]) {
+    for (const match of text.matchAll(pattern)) {
+      claim(match.index + match[0].length - match[1].length, match[1], 'ADDRESS')
+    }
+  }
 
   // 9. Company names that end in a legal suffix: "Quantel Systems India Private Limited".
   for (const match of text.matchAll(COMPANY_NAME)) {

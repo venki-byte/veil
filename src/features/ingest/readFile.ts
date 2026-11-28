@@ -7,6 +7,8 @@
  *     (see transcribeImage in src/ai/hybrid.ts). The image is never uploaded.
  */
 
+import { planBands, rowInk, stretchContrast, toGray } from './imageBands'
+
 export const MAX_DOCUMENT_CHARS = 80_000
 
 /** Longest side, in pixels, of a photo handed to the on-device model. */
@@ -101,30 +103,61 @@ export async function extractPdfText(file: File): Promise<string> {
   return pages.filter(Boolean).join('\n\n')
 }
 
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not prepare the photo.'))), 'image/jpeg', 0.92),
+  )
+}
+
 /**
- * Scales a photo down to a size the on-device model handles well and
- * re-encodes it. Runs on a canvas in this tab.
+ * Prepares a photo for the on-device model, in this tab:
+ *   1. scales it to a size the model handles,
+ *   2. converts it to grayscale and stretches the contrast, which helps dim or
+ *      tinted photos,
+ *   3. cuts a tall page into horizontal bands at blank rows, so each band is
+ *      read with more detail than one pass over the whole page allows.
+ * Returns the bands in reading order. Short or wide photos come back as one.
  */
-export async function prepareImage(file: File): Promise<Blob> {
+export async function prepareImage(file: File): Promise<Blob[]> {
   const bitmap = await createImageBitmap(file)
   try {
     const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height))
-    if (scale === 1 && (file.type === 'image/jpeg' || file.type === 'image/png')) return file
+    const width = Math.round(bitmap.width * scale)
+    const height = Math.round(bitmap.height * scale)
 
     const canvas = document.createElement('canvas')
-    canvas.width = Math.round(bitmap.width * scale)
-    canvas.height = Math.round(bitmap.height * scale)
-    const context = canvas.getContext('2d')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) throw new Error('Could not prepare the photo in this browser.')
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    context.drawImage(bitmap, 0, 0, width, height)
 
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('Could not prepare the photo.'))),
-        'image/jpeg',
-        0.92,
-      ),
-    )
+    const pixels = context.getImageData(0, 0, width, height)
+    const gray = toGray(pixels.data, width, height)
+    stretchContrast(gray)
+    for (let index = 0, pixel = 0; index < gray.length; index += 1, pixel += 4) {
+      pixels.data[pixel] = gray[index]
+      pixels.data[pixel + 1] = gray[index]
+      pixels.data[pixel + 2] = gray[index]
+      pixels.data[pixel + 3] = 255
+    }
+    context.putImageData(pixels, 0, 0)
+
+    const bounds = planBands(rowInk(gray, width, height), width, height)
+    const bands: Blob[] = []
+    for (let part = 0; part + 1 < bounds.length; part += 1) {
+      const top = bounds[part]
+      const bandHeight = bounds[part + 1] - top
+      const slice = document.createElement('canvas')
+      slice.width = width
+      slice.height = bandHeight
+      const sliceContext = slice.getContext('2d')
+      if (!sliceContext) throw new Error('Could not prepare the photo in this browser.')
+      sliceContext.drawImage(canvas, 0, top, width, bandHeight, 0, 0, width, bandHeight)
+      bands.push(await canvasToBlob(slice))
+    }
+    return bands
   } finally {
     bitmap.close()
   }

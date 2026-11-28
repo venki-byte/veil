@@ -58,6 +58,11 @@ const GENERIC = new Set(
     'laboratory', 'lab', 'company', 'employer', 'employee', 'customer', 'applicant', 'guarantor',
     'witness', 'signature', 'account', 'account number', 'id', 'reference', 'india', 'rupees',
     'taxpayer', 'assessee', 'department', 'government', 'agreement', 'party', 'parties',
+    // Verbs and nouns that head a form field. A small model sometimes takes the
+    // capitalised word before a name (for example "Registered on ...") for a person.
+    'registered', 'collected', 'reported', 'received', 'referred', 'referred by', 'processed',
+    'issued', 'printed', 'checked', 'approved', 'verified', 'consumer', 'consumer name',
+    'invoice', 'tax invoice', 'bill', 'receipt', 'statement', 'report', 'total', 'amount',
   ],
 )
 

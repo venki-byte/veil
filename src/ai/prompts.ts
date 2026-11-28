@@ -66,12 +66,17 @@ export const LANGUAGES = {
 export type LanguageCode = keyof typeof LANGUAGES
 
 /** On-device: transcribe a photographed document. The image never leaves the device. */
-export function transcribePrompt(): string {
+export function transcribePrompt(part?: { index: number; total: number }): string {
+  const scope =
+    part && part.total > 1
+      ? `This image is part ${part.index} of ${part.total} of one page, cut from top to bottom. Transcribe only what is visible in this part. Do not guess what comes before or after it.\n`
+      : ''
   return `Transcribe all the text in this image of a document.
-- Copy the text exactly as written, including names, numbers and dates.
-- Keep the line breaks and the reading order. Put each table row on its own line.
+${scope}- Copy the text exactly as written, including names, numbers and dates. Copy each digit one by one.
+- Keep the line breaks and the reading order. Put each table row on its own line, with its label and its values together.
+- Never invent, guess or complete text. Write only what you can see. Do not make up names, addresses, numbers, dates or email addresses.
+- If a word or number is blurry or cut off, write [unreadable] in its place.
 - Do not summarise, explain, translate or add anything.
-- If a word cannot be read, write [unreadable] in its place.
 Output only the transcribed text.`
 }
 

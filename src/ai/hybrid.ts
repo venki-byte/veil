@@ -38,6 +38,7 @@ import { assertNoLeak, LeakBlockedError } from '../privacy/leakGuard'
 import { Registry } from '../privacy/registry'
 import { createDeviceStore } from './deviceStatus'
 import { accumulate } from './stream'
+import { cleanTranscript } from './transcript'
 import { withTimeout } from './timeout'
 import {
   classifyPrompt,
@@ -656,7 +657,7 @@ function blobToBase64(blob: Blob): Promise<string> {
  * ONLY_ON_DEVICE. Reads the text out of a photographed document.
  * The image is never uploaded; if Gemini Nano is missing this throws.
  */
-export async function transcribeImage(image: Blob): Promise<AiResult<string>> {
+export async function transcribeImage(image: Blob, part?: { index: number; total: number }): Promise<AiResult<string>> {
   if (image.type !== 'image/jpeg' && image.type !== 'image/png') {
     throw new Error('Only JPEG and PNG photos can be read on-device.')
   }
@@ -667,7 +668,29 @@ export async function transcribeImage(image: Blob): Promise<AiResult<string>> {
     )
   }
   const data = await blobToBase64(image)
-  return run(ROUTES.transcribe, { prompt: transcribePrompt(), image: { mimeType: image.type, data } })
+  return run(ROUTES.transcribe, { prompt: transcribePrompt(part), image: { mimeType: image.type, data } })
+}
+
+/**
+ * ONLY_ON_DEVICE. Reads a photographed page that was cut into bands, one band
+ * at a time, then joins the text and cleans it. Each band is its own on-device
+ * call, so a tall page is read at a higher resolution than one pass allows.
+ */
+export async function transcribeBands(
+  bands: Blob[],
+  onPart?: (index: number, total: number) => void,
+): Promise<AiResult<string>> {
+  const texts: string[] = []
+  let durationMs = 0
+  let last: AiResult<string> | null = null
+  for (let index = 0; index < bands.length; index += 1) {
+    onPart?.(index + 1, bands.length)
+    last = await transcribeImage(bands[index], { index: index + 1, total: bands.length })
+    durationMs += last.durationMs
+    texts.push(last.value)
+  }
+  if (!last) throw new Error('There was no photo to read.')
+  return { ...last, value: cleanTranscript(texts.join('\n')), durationMs }
 }
 
 /**

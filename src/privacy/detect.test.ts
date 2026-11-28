@@ -37,6 +37,12 @@ describe('spansFromNano', () => {
     expect(spansFromNano(chunk, [{ text: 'Patient', type: 'PERSON' }])).toEqual([])
   })
 
+  it('drops form words that head a field, not a person', () => {
+    const form = { start: 0, text: 'Patient Name : Mr. Asha Verma Registered on : 14/11/2026' }
+    expect(spansFromNano(form, [{ text: 'Registered', type: 'PERSON' }])).toEqual([])
+    expect(spansFromNano(form, [{ text: 'Asha Verma', type: 'PERSON' }])).toHaveLength(1)
+  })
+
   it('drops lab values and amounts so the cloud can still explain them', () => {
     expect(spansFromNano(chunk, [{ text: '10.8', type: 'OTHER' }])).toEqual([])
     const money = { start: 0, text: 'Fee Rs. 32,000 and 8%' }
