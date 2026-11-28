@@ -14,9 +14,15 @@ Built for #BuildHybridAI 2026 with **Firebase AI Logic** and the **Hybrid Infere
 
 <!-- TODO before submitting: add the demo video link here. -->
 
-<!-- TODO before submitting: add screenshots here (three-column view, privacy ledger,
-     leak test, routing check). Suggested files: docs/screenshot-workspace.png,
-     docs/screenshot-ledger.png, docs/screenshot-leak-test.png. -->
+### Screenshots
+
+A PDF blood report (invented patient). The original stays on the device, the middle column is all the cloud receives, and the right column is the explanation with the real names put back:
+
+![A blood report PDF in Veil: 37 values hidden, leak guard passed](docs/screenshot-pdf.png)
+
+A photo of a printed electricity bill (invented customer), read on the device by Gemini Nano:
+
+![A photo of an electricity bill in Veil: 14 values hidden, leak guard passed](docs/screenshot-photo.png)
 
 ## The problem
 
